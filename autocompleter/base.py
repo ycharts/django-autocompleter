@@ -32,9 +32,6 @@ class AutocompleterProvider(AutocompleterBase):
     model = None
     # Name in redis that data for this provider will be stored. To preserve memory, keep this short.
     provider_name = None
-    # Settings we want to override at the provider level
-    settings = {}
-
     # Cache of all aliases for this provider, including all possible variations
     _phrase_aliases = None
 
@@ -154,6 +151,10 @@ class AutocompleterProvider(AutocompleterBase):
                     norm_phrase_alias.append(norm_value)
                     norm_phrase_alias = norm_phrase_aliases.setdefault(norm_value, [])
                     norm_phrase_alias.append(norm_key)
+                    for i in norm_values:
+                        if i not in norm_phrase_alias and i is not norm_value:
+                            norm_phrase_alias.append(i)
+
         cls._phrase_aliases = norm_phrase_aliases
         return cls._phrase_aliases
 
@@ -171,6 +172,8 @@ class AutocompleterProvider(AutocompleterBase):
         DO NOT override this.
         """
         # Init data
+        if not self.include_object():
+            return
         provider_name = self.get_provider_name()
         obj_id = self.get_obj_id()
         norm_terms = self._get_norm_terms()
@@ -209,15 +212,19 @@ class AutocompleterProvider(AutocompleterBase):
 
         # Process normalized term of object, placing object ID in a sorted set
         # representing exact matches
-        for norm_term in norm_terms:
-            # Store exact term to obj ID mapping, with score
-            key = EXACT_BASE_NAME % (provider_name, norm_term,)
-            pipe.zadd(key, obj_id, score)
+        max_exact_match_words = registry.get_provider_setting(self, 'MAX_EXACT_MATCH_WORDS')
+        if max_exact_match_words > 0:
+            for norm_term in norm_terms:
+                if len(norm_term.split(' ')) > max_exact_match_words:
+                    continue
+                # Store exact term to obj ID mapping, with score
+                key = EXACT_BASE_NAME % (provider_name, norm_term,)
+                pipe.zadd(key, obj_id, score)
 
-            # Store autocompleter to exact term mapping so we know all exact terms
-            # of an autocompleter
-            key = EXACT_SET_BASE_NAME % (provider_name,)
-            pipe.sadd(key, norm_term)
+                # Store autocompleter to exact term mapping so we know all exact terms
+                # of an autocompleter
+                key = EXACT_SET_BASE_NAME % (provider_name,)
+                pipe.sadd(key, norm_term)
 
         # Store obj ID to data mapping
         key = AUTO_BASE_NAME % (provider_name,)

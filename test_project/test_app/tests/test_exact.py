@@ -81,7 +81,6 @@ class MultiExactStorageTestCase(AutocompleterTestCase):
         We store exact matches when MAX_EXACT_MATCH_WORDS is turned on, in the multi-provider case
         """
         setattr(auto_settings, 'MAX_EXACT_MATCH_WORDS', 10)
-
         autocomp = Autocompleter("mixed")
         autocomp.store_all()
         keys = self.redis.keys('djac.stock.e.*')
@@ -101,18 +100,18 @@ class MultiExactStorageTestCase(AutocompleterTestCase):
         """
         setattr(auto_settings, 'MAX_EXACT_MATCH_WORDS', 10)
         registry.set_provider_setting(IndicatorAutocompleteProvider, 'MAX_EXACT_MATCH_WORDS', 0)
-
         autocomp = Autocompleter("mixed")
+
         autocomp.store_all()
         keys = self.redis.keys('djac.stock.e.*')
         self.assertNotEqual(len(keys), 0)
-        self.assertFalse(self.redis.exists('djac.stock.es'))
+        self.assertTrue(self.redis.exists('djac.stock.es'))
         keys = self.redis.keys('djac.ind.e.*')
         self.assertEqual(len(keys), 0)
-        self.assertTrue(self.redis.exists('djac.ind.es'))
+        self.assertFalse(self.redis.exists('djac.ind.es'))
         autocomp.remove_all()
-
         registry.del_provider_setting(IndicatorAutocompleteProvider, 'MAX_EXACT_MATCH_WORDS')
+
         setattr(auto_settings, 'MAX_EXACT_MATCH_WORDS', 0)
 
 

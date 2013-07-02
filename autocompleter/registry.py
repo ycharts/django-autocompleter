@@ -69,10 +69,11 @@ class AutocompleterRegistry(object):
         If that doesn't eixst, fall back to the global version of the setting.
         """
         # Provider specific version
-        if setting_name in provider.settings:
-            return provider.settings['']
-        # Global version
-        return getattr(settings, setting_name)
+        try:
+            provider_settings = getattr(provider, 'settings')
+            return provider_settings[setting_name]
+        except (AttributeError, KeyError):
+            return getattr(settings, setting_name)
 
     def set_provider_setting(self, provider, setting_name, setting_value):
         """
@@ -80,7 +81,11 @@ class AutocompleterRegistry(object):
         Note: This is probably only be used by the test suite to test override settings
         post registration so we can assure setting overriding works
         """
-        provider.settings[setting_name] = setting_value
+        try:
+            provider_settings = getattr(provider, 'settings')
+        except AttributeError:
+            setattr(provider, 'settings', {})
+            provider.settings[setting_name] = setting_value
 
     def del_provider_setting(self, provider, setting_name):
         """
@@ -88,8 +93,11 @@ class AutocompleterRegistry(object):
         Note: This is probably only be used by the test suite to test override settings
         post registration so we can assure setting overriding works
         """
-        if setting_name in provider.settings:
-            del provider.settings[setting_name]
+        try:
+            provider_settings = getattr(provider, 'settings')
+            del(provider_settings[setting_name])
+        except (AttributeError, KeyError):
+            return
 
     def get_ac_provider_setting(self, ac_name, provider, setting_name):
         """
@@ -102,10 +110,13 @@ class AutocompleterRegistry(object):
         if setting_name in self._ac_provider_settings[combined_name]:
             return self._ac_provider_settings[combined_name][setting_name]
         # Provider specific version
-        if setting_name in provider.settings:
-            return provider.settings['']
-        # Global version
-        return getattr(settings, setting_name)
+        try:
+            provider_settings = getattr(provider, 'settings')
+            setting_value = provider_settings['setting_name']
+            return setting_value
+        except (KeyError, AttributeError):
+            # Global version
+            return getattr(settings, setting_name)
 
     def set_ac_provider_setting(self, ac_name, provider, setting_name, setting_value):
         """
