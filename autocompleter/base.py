@@ -82,7 +82,7 @@ class AutocompleterProvider(AutocompleterBase):
         if phrase_aliases is not None:
             for norm_term in norm_terms:
                 norm_terms_with_variations = norm_terms_with_variations + \
-                    utils.get_all_variations(norm_term, phrase_aliases)
+                    utils.get_aliased_variations(norm_term, phrase_aliases)
 
         return norm_terms_with_variations
 
@@ -144,15 +144,19 @@ class AutocompleterProvider(AutocompleterBase):
                     norm_values += utils.get_norm_term_variations(v)
             else:
                 norm_values = utils.get_norm_term_variations(value)
-
+            norm_values = set(norm_values)
+            norm_keys = set(norm_keys)
             for norm_key in norm_keys:
                 for norm_value in norm_values:
+                    if norm_value == norm_key:
+                        continue
                     norm_phrase_alias = norm_phrase_aliases.setdefault(norm_key, [])
                     norm_phrase_alias.append(norm_value)
                     norm_phrase_alias = norm_phrase_aliases.setdefault(norm_value, [])
-                    norm_phrase_alias.append(norm_key)
+                    if norm_key not in norm_phrase_alias:
+                        norm_phrase_alias.append(norm_key)
                     for i in norm_values:
-                        if i not in norm_phrase_alias and i is not norm_value:
+                        if i not in norm_phrase_alias and i != norm_value:
                             norm_phrase_alias.append(i)
 
         cls._phrase_aliases = norm_phrase_aliases
@@ -380,13 +384,16 @@ class Autocompleter(AutocompleterBase):
 
         # If we have a cached version of the search results available, return it!
         cache_key = CACHE_BASE_NAME % \
-            (self.name, utils.get_normalized_term(term),)
+            (self.name, utils.get_normalized_term(term, settings.JOIN_CHARS))
         if settings.CACHE_TIMEOUT and REDIS.exists(cache_key):
             return self._deserialize_data(REDIS.get(cache_key))
 
         # Get the normalized we need to search for each term... A single term
         # could turn into multiple terms we need to search.
         norm_terms = utils.get_norm_term_variations(term)
+        if len(norm_terms) == 0:
+            return []
+
         provider_results = SortedDict()
 
         # Get the matched result IDs
@@ -404,8 +411,6 @@ class Autocompleter(AutocompleterBase):
             result_keys = []
             for norm_term in norm_terms:
                 norm_words = norm_term.split()
-                if len(norm_words) == 0:
-                    continue
                 result_key = "djac.results.%s" % (norm_term,)
                 result_keys.append(result_key)
                 keys = [PREFIX_BASE_NAME % (provider_name, i,) for i in norm_words]
@@ -481,6 +486,8 @@ class Autocompleter(AutocompleterBase):
         # Get the normalized we need to search for each term... A single term
         # could turn into multiple terms we need to search.
         norm_terms = utils.get_norm_term_variations(term)
+        if len(norm_terms) == 0:
+            return []
 
         # Get the matched result IDs
         pipe = REDIS.pipeline()
