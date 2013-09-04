@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from test_app.tests.base import AutocompleterTestCase
-from test_app.models import StockAutocompleteProvider, IndicatorAutocompleteProvider
+from test_app.models import StockAutocompleteProvider, IndicatorAutocompleteProvider, MetricAutocompleteProvider
 from autocompleter import Autocompleter, registry
 from autocompleter import settings as auto_settings
 
@@ -185,6 +185,18 @@ class IndicatorMatchTestCase(AutocompleterTestCase):
         # Must set the setting back to where it was as it will persist
         setattr(auto_settings, 'MIN_LETTERS', 1)
 
+class DictProviderMatchingTestCase(AutocompleterTestCase):
+    def setUp(self):
+        self.autocomp = Autocompleter("metric")
+        self.autocomp.store_all()
+        super(DictProviderMatchingTestCase, self).setUp()
+
+    def tearDown(self):
+        self.autocomp.remove_all()
+
+    def test_basic_match(self):
+        matches = self.autocomp.suggest('m')
+        self.assertEqual(len(matches), 1)
 
 class MultiMatchingTestCase(AutocompleterTestCase):
     fixtures = ['stock_test_data_small.json', 'indicator_test_data_small.json']
@@ -206,6 +218,9 @@ class MultiMatchingTestCase(AutocompleterTestCase):
 
         matches = self.autocomp.suggest('US Initial Claims')
         self.assertEqual(len(matches['ind']), 1)
+
+        matches = self.autocomp.suggest('m')
+        self.assertEqual(len(matches), 3)
 
         matches = self.autocomp.suggest('a')
         self.assertEqual(len(matches['stock']), 10)
@@ -234,8 +249,10 @@ class MultiMatchingTestCase(AutocompleterTestCase):
         self.assertEqual(len(matches['ind']), 10)
 
         registry.set_ac_provider_setting("mixed", IndicatorAutocompleteProvider, 'MIN_LETTERS', 2)
+        registry.set_ac_provider_setting("mixed", MetricAutocompleteProvider, 'MIN_LETTERS', 2)
         matches = self.autocomp.suggest('a')
         self.assertEqual(len(matches), 10)
         self.assertEqual('ind' not in matches, True)
 
         registry.del_ac_provider_setting("mixed", IndicatorAutocompleteProvider, 'MIN_LETTERS')
+        registry.del_ac_provider_setting("mixed", MetricAutocompleteProvider, 'MIN_LETTERS')
