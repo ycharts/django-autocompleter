@@ -82,7 +82,6 @@ def get_aliased_variations(term, phrase_aliases):
     # 2) The values are each list of parts of the term that have already been aliased
     # This is to prevent double aliasing... i.e. California -> CA -> Canada.
     term_aliases = {term: []}
-
     while len(term_stack) != 0:
         # Grab the term
         term = term_stack.pop()
@@ -120,6 +119,36 @@ def get_aliased_variations(term, phrase_aliases):
                     term_aliases[term_alias] = term_alias_phrase_ranges
 
     return term_aliases.keys()
+
+# Here we build the dict where 1 phrase can map to 1 or more aliased phrases
+def build_norm_phrase_alias_dict(phrase_alias_dict, two_way=True):
+    norm_phrase_aliases = {}
+    for key, value in phrase_alias_dict.items():
+        norm_keys = get_norm_term_variations(key)
+        if type(value) == list:
+            norm_values = []
+            for v in value:
+                norm_values += get_norm_term_variations(v)
+        else:
+            norm_values = get_norm_term_variations(value)
+        norm_values = set(norm_values)
+        norm_keys = set(norm_keys)
+        for norm_key in norm_keys:
+            for norm_value in norm_values:
+                if norm_value == norm_key:
+                    continue
+                norm_phrase_alias = norm_phrase_aliases.setdefault(norm_key, [])
+                norm_phrase_alias.append(norm_value)
+                if not two_way:
+                    continue
+                norm_phrase_alias = norm_phrase_aliases.setdefault(norm_value, [])
+                if norm_key not in norm_phrase_alias:
+                    norm_phrase_alias.append(norm_key)
+                for i in norm_values:
+                    if i not in norm_phrase_alias and i != norm_value:
+                        norm_phrase_alias.append(i)
+
+    return norm_phrase_aliases
 
 
 def get_phrase_indices_for_term(term):

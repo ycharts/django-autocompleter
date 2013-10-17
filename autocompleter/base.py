@@ -10,7 +10,10 @@ REDIS = redis.Redis(host=settings.REDIS_CONNECTION['host'],
     port=settings.REDIS_CONNECTION['port'],
     db=settings.REDIS_CONNECTION['db'])
 
-AUTO_BASE_NAME = 'djac.%s'
+if settings.TEST_DATA:
+    AUTO_BASE_NAME = 'djac.test.%s'
+else:
+    AUTO_BASE_NAME = 'djac.%s'
 CACHE_BASE_NAME = AUTO_BASE_NAME + '.c.%s'
 EXACT_CACHE_BASE_NAME = AUTO_BASE_NAME + '.ce.%s'
 PREFIX_BASE_NAME = AUTO_BASE_NAME + '.p.%s'
@@ -97,6 +100,19 @@ class AutocompleterProviderBase(AutocompleterBase):
         terms of a particular model, override this function to return a dict of
         key value pairs. Autocompleter will also reverse these aliases.
         So if 'US' maps to 'United States' then 'United States' will map to 'US'
+
+        {x: y} means to the AC that x is also y, and y is also x
+        """
+        return {}
+
+    @classmethod
+    def get_one_way_phrase_aliases(cls):
+        """
+        If you have aliases (i.e. 'US' = 'United States'), for phrases within
+        terms of a particular model, override this function to return a dict of
+        key value pairs. Autocompleter will NOT reverse these.
+
+        {x: y} means to the AC that x is also y, but y is not x
         """
         return {}
 
@@ -110,35 +126,13 @@ class AutocompleterProviderBase(AutocompleterBase):
         if cls._phrase_aliases is not None:
             return cls._phrase_aliases
 
-        norm_phrase_aliases = {}
+        norm_phrase_aliases = utils.build_norm_phrase_alias_dict(cls.get_phrase_aliases())
+        one_way_phrase_aliases = cls.get_one_way_phrase_aliases()
+        one_way_norm_phrase_aliases = utils.build_norm_phrase_alias_dict(one_way_phrase_aliases, two_way=False)
 
-        # Here we build the dict where 1 phrase can map to 1 or more aliased phrases
-        for key, value in cls.get_phrase_aliases().items():
-            norm_keys = utils.get_norm_term_variations(key)
-            if type(value) == list:
-                norm_values = []
-                for v in value:
-                    norm_values += utils.get_norm_term_variations(v)
-            else:
-                norm_values = utils.get_norm_term_variations(value)
-            norm_values = set(norm_values)
-            norm_keys = set(norm_keys)
-            for norm_key in norm_keys:
-                for norm_value in norm_values:
-                    if norm_value == norm_key:
-                        continue
-                    norm_phrase_alias = norm_phrase_aliases.setdefault(norm_key, [])
-                    norm_phrase_alias.append(norm_value)
-                    norm_phrase_alias = norm_phrase_aliases.setdefault(norm_value, [])
-                    if norm_key not in norm_phrase_alias:
-                        norm_phrase_alias.append(norm_key)
-                    for i in norm_values:
-                        if i not in norm_phrase_alias and i != norm_value:
-                            norm_phrase_alias.append(i)
-
+        norm_phrase_aliases.update(one_way_norm_phrase_aliases)
         cls._phrase_aliases = norm_phrase_aliases
         return cls._phrase_aliases
-
 
     @classmethod
     def get_provider_name(cls):
@@ -149,17 +143,19 @@ class AutocompleterProviderBase(AutocompleterBase):
         return cls.provider_name
 
     @classmethod
-    def delete_old_terms(cls, obj_id):
+    def delete_old_terms(cls, obj_id, old_terms):
         """
         Gets rid of old terms based on terms listed in the id-terms mapping.
         """
+        cls.clear_keys(obj_id, old_terms)
+
+    @classmethod
+    def get_old_terms(cls, obj_id):
         key = TERM_SET_BASE_NAME % (cls.get_provider_name(),)
         old_terms = REDIS.hget(key, obj_id)
-
         if old_terms is not None:
             old_terms = cls._deserialize_data(old_terms)
-            old_terms = cls._get_norm_terms(old_terms)
-            cls.clear_keys(obj_id, old_terms)
+        return old_terms
 
     @classmethod
     def clear_keys(cls, obj_id, norm_terms):
@@ -229,9 +225,21 @@ class AutocompleterProviderBase(AutocompleterBase):
         score = self._get_score()
         data = self.get_data()
 
+        old_terms = self.__class__.get_old_terms(obj_id)
+        # if old terms are the same as the new, shortcircuit and just
+        # update the data payload in case anything there is different.
+        if terms == old_terms:
+            # Store obj ID to data mapping
+            key = AUTO_BASE_NAME % (provider_name,)
+            REDIS.hset(key, obj_id, self.__class__._serialize_data(data))
+            return
+
         # Clear out the obj_id's old data if told to
         if delete_old is True:
-            self.__class__.delete_old_terms(obj_id)
+            # TODO: memoize get_old_terms? Otherwise have to pass old_terms down the line to avoid
+            # doing 2 extra redis queries.
+            if old_terms is not None:
+                self.__class__.delete_old_terms(obj_id, old_terms)
 
         # Start pipeline
         pipe = REDIS.pipeline()
@@ -274,7 +282,8 @@ class AutocompleterProviderBase(AutocompleterBase):
         # set provider's obj_id - terms hash.
         key = TERM_SET_BASE_NAME % (provider_name,)
 
-        serialized_terms = self.__class__._serialize_data(terms)
+        serialized_terms = self.__class__._serialize_data(norm_terms)
+
         pipe.hset(key, obj_id, serialized_terms)
         # End pipeline
         pipe.execute()
@@ -285,8 +294,8 @@ class AutocompleterProviderBase(AutocompleterBase):
         DO NOT override this.
         """
         # Init data
-        terms = self.get_terms()
         obj_id = self.get_item_id()
+        terms = self.__class__.get_old_terms(obj_id)
         norm_terms = self.__class__._get_norm_terms(terms)
         self.__class__.clear_keys(obj_id, norm_terms)
 
@@ -323,8 +332,6 @@ class AutocompleterModelProvider(AutocompleterProviderBase):
 
 class AutocompleterDictProvider(AutocompleterProviderBase):
     # Model this provider is related to
-    model = None
-
     obj_dict = None
 
     def get_item_id(self):
@@ -540,9 +547,7 @@ class Autocompleter(AutocompleterBase):
 
         # If told to, cache the final results for CACHE_TIMEOUT secnds
         if settings.CACHE_TIMEOUT:
-            REDIS.set(cache_key, self.__class__._serialize_data(results))
-            REDIS.expire(cache_key, settings.CACHE_TIMEOUT)
-
+            REDIS.setex(cache_key, self.__class__._serialize_data(results), settings.CACHE_TIMEOUT)
         return results
 
     def exact_suggest(self, term):
@@ -593,8 +598,7 @@ class Autocompleter(AutocompleterBase):
 
         # If told to, cache the final results for CACHE_TIMEOUT secnds
         if settings.CACHE_TIMEOUT:
-            REDIS.set(cache_key, self.__class__._serialize_data(results))
-            REDIS.expire(cache_key, settings.CACHE_TIMEOUT)
+            REDIS.setex(cache_key, self.__class__._serialize_data(results), settings.CACHE_TIMEOUT)
         return results
 
     def _get_results_from_ids(self, provider_results):

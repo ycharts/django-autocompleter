@@ -9,9 +9,9 @@ class IndicatorAliasedMatchTestCase(AutocompleterTestCase):
     fixtures = ['indicator_test_data_small.json']
 
     def setUp(self):
+        super(IndicatorAliasedMatchTestCase, self).setUp()
         self.autocomp = Autocompleter("indicator_aliased")
         self.autocomp.store_all()
-        super(IndicatorAliasedMatchTestCase, self).setUp()
 
     def tearDown(self):
         self.autocomp.remove_all()
@@ -64,3 +64,54 @@ class IndicatorAliasedMatchTestCase(AutocompleterTestCase):
         """
         matches = self.autocomp.suggest('california unemployment')
         self.assertEqual(len(matches), 1)
+
+class CalcAutocompleteProviderTestCase(AutocompleterTestCase):
+    def setUp(self):
+        super(CalcAutocompleteProviderTestCase, self).setUp()
+        self.autocomp = Autocompleter("metric_aliased")
+        self.autocomp.store_all()
+
+    def tearDown(self):
+        self.autocomp.remove_all()
+
+    def test_one_way_alias_list_creation(self):
+        """
+        Test that oneway alias lists are created properly
+        """
+        provider = registry._providers_by_ac["metric_aliased"][0]
+        aliases = provider.get_norm_phrase_aliases()
+        self.assertTrue('revenue' in aliases)
+        self.assertFalse('turnover' in aliases)
+
+    def test_one_way_aliasing(self):
+        """
+        Aliases in get_one_way_phrase_aliases are not aliased both ways.
+        """
+        matches = self.autocomp.suggest('revenue')
+        self.assertEqual(len(matches), 1)
+        matches = self.autocomp.suggest('Turnover')
+        self.assertEqual(len(matches), 2)
+
+    def test_one_way_with_two_way_alias_list_creation(self):
+        """
+        Two way and one way aliases are both included/treated properly
+        """
+        provider = registry._providers_by_ac["metric_aliased"][0]
+        aliases = provider.get_norm_phrase_aliases()
+        self.assertTrue('ev' in aliases)
+        self.assertTrue('enterprise value' in aliases)
+        self.assertTrue('revenue' in aliases)
+        self.assertFalse('turnover' in aliases)
+
+
+    def test_one_way_with_two_way_aliasing(self):
+        """
+        Aliases in get_one_way_phrase_aliases are not aliased both ways.
+        """
+        rev_matches = self.autocomp.suggest('revenue')
+        turn_matches = self.autocomp.suggest('Turnover')
+        self.assertFalse(rev_matches == turn_matches)
+
+        ev_matches = self.autocomp.suggest('EV')
+        ent_val_matches = self.autocomp.suggest('Enterprise Value')
+        self.assertEqual(ev_matches, ent_val_matches)
