@@ -4,7 +4,6 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "django-redis-autocompleter"
-version = "1.0.0"
 authors = [
     { name="Ara Anjargolian", email="ara818@gmail.com" },
     { name="Kevin Fox", email="kevin_fox@me.com" },
@@ -28,10 +27,18 @@ dependencies = [
     "hiredis >= 1",
     "redis >= 3",
 ]
+dynamic = ["version"]
 
 [project.urls]
 "Homepage" = "https://github.com/ycharts/django-autocompleter"
 "Bug Tracker" = "https://github.com/ycharts/django-autocompleter/issues"
 
 [tool.setuptools]
-packages = ["autocompleter"]
+packages = [
+    "autocompleter",
+    "autocompleter.management",
+    "autocompleter.management.commands",
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "autocompleter.VERSION"}
