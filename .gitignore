@@ -2,7 +2,7 @@
 .idea/
 .vscode/
 .DS_Store
-*.egg-info/*
+*.egg-info
 .coverage
 **/htmlcov/**
 dist/*

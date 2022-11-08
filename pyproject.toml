@@ -34,4 +34,4 @@ dependencies = [
 "Bug Tracker" = "https://github.com/ycharts/django-autocompleter/issues"
 
 [tool.setuptools]
-package-dir = {"" = "autocompleter"}
+packages = ["autocompleter"]
