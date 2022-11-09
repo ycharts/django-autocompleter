@@ -15,7 +15,7 @@ def replace_all(string, replace=[], with_this=""):
     return string
 
 
-def get_normalized_term(term, replaced_chars=[]):
+def get_normalized_term(term, replaced_chars=None):
     """
     Convert the term into a basic form that's easier to search.
     1) Force convert from text to unicode if necessary
@@ -33,10 +33,11 @@ def get_normalized_term(term, replaced_chars=[]):
     term = unicodedata.normalize("NFKD", term).encode("ASCII", "ignore").decode("utf-8")
     term = term.replace("&", "and")
     term = term.strip()
-    if replaced_chars != []:
+    if replaced_chars is not None and isinstance(replaced_chars, list):
         term = replace_all(term, replace=replaced_chars, with_this=" ")
     term = re.sub(settings.CHARACTER_FILTER, "", term)
     term = re.sub(r"[\s]+", " ", term)
+    term = term.strip()
     return term
 
 

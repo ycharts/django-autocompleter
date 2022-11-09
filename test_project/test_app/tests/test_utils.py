@@ -1,5 +1,6 @@
 from django.test import TestCase
 from autocompleter import Autocompleter
+from autocompleter.utils import get_normalized_term
 from autocompleter.views import SuggestView
 
 
@@ -220,3 +221,29 @@ class TestNormalizeRounding(TestCase):
         self.assertEqual(0, Autocompleter.normalize_rounding(0.49))
         self.assertEqual(-1, Autocompleter.normalize_rounding(-0.51))
         self.assertEqual(0, Autocompleter.normalize_rounding(-0.49))
+        self.assertEqual(1, Autocompleter.normalize_rounding(1))
+
+    def test_non_int(self):
+        """
+        Rounding a non-integer results in ValueError
+        """
+        with self.assertRaises(ValueError):
+            Autocompleter.normalize_rounding(None)
+
+
+class TestNormalizedTerm(TestCase):
+    def test_byte_string(self):
+        self.assertEqual("us gdp", get_normalized_term(b"US GDP"))
+
+    def test_replace_characters(self):
+        self.assertEqual(
+            "us and china", get_normalized_term("US & [CHiNA]", replaced_chars=[])
+        )
+        self.assertEqual(
+            "percent change",
+            get_normalized_term("Non Percent Change", replaced_chars=["non"]),
+        )
+        self.assertEqual(
+            "cent change",
+            get_normalized_term("Non Percent Change", replaced_chars=["non", "per"]),
+        )
