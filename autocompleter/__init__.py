@@ -1,4 +1,4 @@
-VERSION = (1, 0, 1)
+VERSION = (1, 0, 2)
 
 from autocompleter.registry import registry, signal_registry
 from autocompleter.base import (
