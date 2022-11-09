@@ -120,7 +120,7 @@ class IndicatorMatchTestCase(AutocompleterTestCase):
     fixtures = ["indicator_test_data_small.json"]
 
     def setUp(self):
-        super(IndicatorMatchTestCase, self).setUp()
+        super().setUp()
         self.autocomp = Autocompleter("indicator")
         self.autocomp.store_all()
 

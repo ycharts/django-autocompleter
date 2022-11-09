@@ -240,10 +240,10 @@ class TestNormalizedTerm(TestCase):
             "us and china", get_normalized_term("US & [CHiNA]", replaced_chars=[])
         )
         self.assertEqual(
-            "percent change",
+            " percent change",
             get_normalized_term("Non Percent Change", replaced_chars=["non"]),
         )
         self.assertEqual(
-            "cent change",
+            " cent change",
             get_normalized_term("Non Percent Change", replaced_chars=["non", "per"]),
         )
