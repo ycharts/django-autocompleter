@@ -500,10 +500,11 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
         signal_registry.register(Stock, add_error_handler=add_handler, remove_error_handler=remove_handler)
 
         aapl.save()
-        self.assertEqual(add_handler.call_count, 1)
+        # There are 2 autocompleter providers for the Stock model. Therefore expect two error handler calls
+        self.assertEqual(add_handler.call_count, 2)
 
         aapl.delete()
-        self.assertEqual(remove_handler.call_count, 1)
+        self.assertEqual(remove_handler.call_count, 2)
 
         signal_registry.unregister(Stock)
 
