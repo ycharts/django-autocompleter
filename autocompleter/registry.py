@@ -1,6 +1,7 @@
 from collections import OrderedDict
 
 from django.db.models.signals import post_save, post_delete
+from functools import partial
 
 from autocompleter import settings
 
@@ -189,7 +190,7 @@ class AutocompleterRegistry(object):
 registry = AutocompleterRegistry()
 
 
-def add_obj_to_autocompleter(sender, instance, created, **kwargs):
+def add_obj_to_autocompleter(sender, instance, created, add_error_handler = None, remove_error_handler = None, **kwargs):
     if instance is None:
         return
 
@@ -197,45 +198,84 @@ def add_obj_to_autocompleter(sender, instance, created, **kwargs):
     for provider_class in provider_classes:
         provider = provider_class(instance)
         if provider.include_item():
-            provider.store()
+            try:
+                provider.store()
+            except Exception as e:
+                if add_error_handler:
+                    add_error_handler(instance, e)
+                else:
+                    raise e
         else:
             # If the item no longer passes the .include_item()
             # check then we need to remove it.
-            provider.remove()
+            try:
+                provider.remove()
+            except Exception as e:
+                if remove_error_handler:
+                    remove_error_handler(instance, e)
+                else:
+                    raise e
 
 
-def remove_obj_from_autocompleter(sender, instance, **kwargs):
+def remove_obj_from_autocompleter(sender, instance, remove_error_handler = None, **kwargs):
     if instance is None:
         return
 
     provider_classes = registry.get_all_by_model(sender)
     for provider_class in provider_classes:
-        provider_class(instance).remove()
+        try:
+            provider_class(instance).remove()
+        except Exception as e:
+            if remove_error_handler:
+                remove_error_handler(instance, e)
+            else:
+                raise e
 
+def remove_obj_from_autocompleter_with_error_handler(error_handler, sender, instance, **kwargs):
+    return remove_obj_from_autocompleter(sender, instance, remove_error_handler=error_handler, **kwargs)
+
+def add_obj_to_autocompleter_with_error_handler(add_error_handler, remove_error_handler, sender, instance, **kwargs):
+    return add_obj_to_autocompleter(sender, instance, add_error_handler=add_error_handler, remove_error_handler=remove_error_handler, **kwargs)
 
 class AutocompleterSignalRegistry(object):
-    def register(self, model):
+    DISPATCH_ID_FUNCTION_MAPPING = {}
+
+    def register(self, model, add_error_handler = None, remove_error_handler = None):
+
+        add_uid = "autocompleter.%s.add" % (model)
+        remove_uid = "autocompleter.%s.remove" % (model)
+
+        if add_error_handler or remove_error_handler:
+            remove_function = partial(remove_obj_from_autocompleter_with_error_handler, remove_error_handler)
+            add_function = partial(add_obj_to_autocompleter_with_error_handler, add_error_handler, remove_error_handler)
+
+            self.DISPATCH_ID_FUNCTION_MAPPING[add_uid] = add_function
+            self.DISPATCH_ID_FUNCTION_MAPPING[remove_uid] = remove_function
+
         post_save.connect(
-            add_obj_to_autocompleter,
+            self.DISPATCH_ID_FUNCTION_MAPPING.get(add_uid, add_obj_to_autocompleter),
             sender=model,
-            dispatch_uid="autocompleter.%s.add" % (model),
+            dispatch_uid=add_uid,
+
         )
         post_delete.connect(
-            remove_obj_from_autocompleter,
+            self.DISPATCH_ID_FUNCTION_MAPPING.get(remove_uid, remove_obj_from_autocompleter),
             sender=model,
-            dispatch_uid="autocompleter.%s.remove" % (model),
+            dispatch_uid=remove_uid,
         )
 
     def unregister(self, model):
+        add_uid = "autocompleter.%s.add" % (model)
+        remove_uid = "autocompleter.%s.remove" % (model)
         post_save.disconnect(
-            add_obj_to_autocompleter,
+            self.DISPATCH_ID_FUNCTION_MAPPING.get(add_uid, add_obj_to_autocompleter),
             sender=model,
-            dispatch_uid="autocompleter.%s.add" % (model),
+            dispatch_uid=add_uid,
         )
         post_delete.disconnect(
-            remove_obj_from_autocompleter,
+            self.DISPATCH_ID_FUNCTION_MAPPING.get(remove_uid, remove_obj_from_autocompleter),
             sender=model,
-            dispatch_uid="autocompleter.%s.remove" % (model),
+            dispatch_uid=remove_uid,
         )
 
 

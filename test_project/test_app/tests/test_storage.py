@@ -12,6 +12,7 @@ from test_app.autocompleters import (
 from test_app import calc_info
 from autocompleter import base, Autocompleter, registry, signal_registry
 from autocompleter import settings as auto_settings
+from unittest.mock import patch, MagicMock
 
 
 class StoringAndRemovingTestCase(AutocompleterTestCase):
@@ -479,6 +480,37 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
         aapl.delete()
         keys = self.redis.keys("djac.test.stock*")
         self.assertEqual(len(keys), 0)
+
+        signal_registry.unregister(Stock)
+
+    @patch('autocompleter.base.Autocompleter.store')
+    @patch('autocompleter.base.Autocompleter.remove')
+    def test_signal_based_add_and_remove_error_handlers(self, mock_remove, mock_store):
+        """
+        Turning on signals will automatically add and remove and object from the autocompleter
+        """
+
+        remove_handler = MagicMock()
+        add_handler = MagicMock()
+
+        mock_remove.side_effect = Exception()
+        mock_store.side_effect = Exception()
+        aapl = Stock(symbol="AAPL", name="Apple", market_cap=50)
+        aapl.save()
+        keys = self.redis.keys("djac.test.stock*")
+        self.assertEqual(len(keys), 0)
+
+        signal_registry.register(Stock, add_error_handler=add_handler, remove_error_handler=remove_handler)
+
+        aapl.save()
+        keys = self.redis.keys("djac.test.stock*")
+        self.assertNotEqual(len(keys), 0)
+        self.assertEqual(add_handler.call_count, 1)
+
+        aapl.delete()
+        keys = self.redis.keys("djac.test.stock*")
+        self.assertEqual(len(keys), 0)
+        self.assertEqual(remove_handler.call_count, 1)
 
         signal_registry.unregister(Stock)
 
