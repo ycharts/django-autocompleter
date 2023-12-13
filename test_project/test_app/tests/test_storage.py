@@ -483,8 +483,8 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
 
         signal_registry.unregister(Stock)
 
-    @patch('autocompleter.base.Autocompleter.store')
-    @patch('autocompleter.base.Autocompleter.remove')
+    @patch('autocompleter.base.AutocompleterProviderBase.store')
+    @patch('autocompleter.base.AutocompleterProviderBase.remove')
     def test_signal_based_add_and_remove_error_handlers(self, mock_remove, mock_store):
         """
         Turning on signals will automatically add and remove and object from the autocompleter
