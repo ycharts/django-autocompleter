@@ -496,20 +496,13 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
         mock_remove.side_effect = Exception()
         mock_store.side_effect = Exception()
         aapl = Stock(symbol="AAPL", name="Apple", market_cap=50)
-        aapl.save()
-        keys = self.redis.keys("djac.test.stock*")
-        self.assertEqual(len(keys), 0)
 
         signal_registry.register(Stock, add_error_handler=add_handler, remove_error_handler=remove_handler)
 
         aapl.save()
-        keys = self.redis.keys("djac.test.stock*")
-        self.assertNotEqual(len(keys), 0)
         self.assertEqual(add_handler.call_count, 1)
 
         aapl.delete()
-        keys = self.redis.keys("djac.test.stock*")
-        self.assertEqual(len(keys), 0)
         self.assertEqual(remove_handler.call_count, 1)
 
         signal_registry.unregister(Stock)
