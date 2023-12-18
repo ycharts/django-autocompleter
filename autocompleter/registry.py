@@ -278,5 +278,8 @@ class AutocompleterSignalRegistry(object):
             dispatch_uid=remove_uid,
         )
 
+        self.DISPATCH_ID_FUNCTION_MAPPING.pop(add_uid, None)
+        self.DISPATCH_ID_FUNCTION_MAPPING.pop(remove_uid, None)
+
 
 signal_registry = AutocompleterSignalRegistry()

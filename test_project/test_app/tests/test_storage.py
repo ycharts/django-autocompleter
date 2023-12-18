@@ -11,6 +11,7 @@ from test_app.autocompleters import (
 )
 from test_app import calc_info
 from autocompleter import base, Autocompleter, registry, signal_registry
+from autocompleter.registry import add_obj_to_autocompleter, remove_obj_from_autocompleter
 from autocompleter import settings as auto_settings
 from unittest.mock import patch, MagicMock
 
@@ -487,7 +488,7 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
     @patch('autocompleter.base.AutocompleterProviderBase.remove')
     def test_signal_based_add_and_remove_error_handlers(self, mock_remove, mock_store):
         """
-        Turning on signals will automatically add and remove and object from the autocompleter
+        Errors are properly handled when add or remove signal is sent.
         """
 
         remove_handler = MagicMock()
@@ -506,6 +507,55 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
         aapl.delete()
         self.assertEqual(remove_handler.call_count, 2)
 
+        signal_registry.unregister(Stock)
+
+    @patch('autocompleter.base.AutocompleterProviderBase.store')
+    @patch('autocompleter.base.AutocompleterProviderBase.remove')
+    def test_add_and_remove_error_handlers(self, mock_remove, mock_store):
+        """
+        Errors are properly handled when adding or removing manually
+        """
+
+        remove_handler = MagicMock()
+        add_handler = MagicMock()
+
+        mock_remove.side_effect = Exception()
+        mock_store.side_effect = Exception()
+        aapl = Stock(symbol="AAPL", name="Apple", market_cap=50)
+
+        add_obj_to_autocompleter(Stock, aapl, False, add_error_handler=add_handler, remove_error_handler=remove_handler)
+        # There are 2 autocompleter providers for the Stock model. Therefore expect two error handler calls
+        self.assertEqual(add_handler.call_count, 2)
+
+        remove_obj_from_autocompleter(Stock, aapl, remove_error_handler=remove_handler)
+        self.assertEqual(remove_handler.call_count, 2)
+
+        signal_registry.unregister(Stock)
+
+    @patch('autocompleter.base.AutocompleterProviderBase.store')
+    @patch('autocompleter.base.AutocompleterProviderBase.remove')
+    def test_unregister_removes_error_handlers(self, mock_remove, mock_store):
+        """
+        Unregistering removes registered error handling
+        """
+        remove_handler = MagicMock()
+        add_handler = MagicMock()
+
+        mock_remove.side_effect = Exception()
+        mock_store.side_effect = Exception()
+        aapl = Stock(symbol="AAPL", name="Apple", market_cap=50)
+
+        signal_registry.register(Stock, add_error_handler=add_handler, remove_error_handler=remove_handler)
+
+        # re register Stock without error handlers
+        signal_registry.unregister(Stock)
+        signal_registry.register(Stock)
+
+        with self.assertRaises(Exception):
+            aapl.save()
+
+        with self.assertRaises(Exception):
+            aapl.delete()
         signal_registry.unregister(Stock)
 
     def test_signal_based_update(self):
