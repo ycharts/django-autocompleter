@@ -10,6 +10,7 @@ class SimpleAutocompleterConfig(AppConfig):
 
 class AutocompleterConfig(SimpleAutocompleterConfig):
     """The default AppConfig for autocompleter which does autodiscovery."""
+    default = True
 
     def ready(self):
         self.module.autodiscover()
