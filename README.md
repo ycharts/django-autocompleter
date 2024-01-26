@@ -1,5 +1,5 @@
 &nbsp;
-![PyPI](https://img.shields.io/pypi/v/django-redis-autocompleter)
+[![PyPI](https://img.shields.io/pypi/v/django-redis-autocompleter)](https://pypi.org/project/django-redis-autocompleter/)
 [![Test Suite](https://github.com/ycharts/django-autocompleter/actions/workflows/main.yml/badge.svg?branch=master)](https://github.com/ycharts/django-autocompleter/actions/workflows/main.yml)
 [![Coverage Status](https://coveralls.io/repos/github/ycharts/django-autocompleter/badge.svg?branch=master)](https://coveralls.io/github/ycharts/django-autocompleter?branch=master)
 
@@ -15,9 +15,9 @@ Thanks goes to these wonderful people.
 <!-- markdownlint-disable -->
 <table>
   <tr>
-    <td align="center"><img src="https://avatars.githubusercontent.com/u/83293?v=4" width="100px;" alt="Ara Anjargolian"/><br /><sub><b>Ara Anjargolian</b></sub></td>
-    <td align="center"><img src="https://avatars.githubusercontent.com/u/2000316?v=4" width="100px;" alt="Kevin Fox"/><br /><sub><b>Kevin Fox</b></sub></td>
-    <td align="center"><img src="https://avatars.githubusercontent.com/u/3022071?v=4" width="100px;" alt="Tom Jakeway"/><br /><sub><b>Tom Jakeway</b></sub></td>
+    <td align="center"><img src="https://avatars.githubusercontent.com/u/83293?v=4" width="100px;" alt="Ara Anjargolian"/><br /><sub><b><a href="https://github.com/ara818">@ara818</a></b></sub></td>
+    <td align="center"><img src="https://avatars.githubusercontent.com/u/2000316?v=4" width="100px;" alt="Kevin Fox"/><br /><sub><b><a href="https://github.com/KFoxder">@kfoxder</a></b></sub></td>
+    <td align="center"><img src="https://avatars.githubusercontent.com/u/3022071?v=4" width="100px;" alt="Tom Jakeway"/><br /><sub><b><a href="https://github.com/Jakeway">@jakeway</a></b></sub></td>
   </tr>
 </table>
 
