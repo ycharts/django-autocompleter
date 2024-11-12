@@ -301,7 +301,7 @@ class AutocompleterProviderBase(AutocompleterBase):
         old_facets = self.__class__.get_old_facets(obj_id)
 
         norm_terms_updated = norm_terms != old_norm_terms
-        facets_updated = facets != old_facets
+        facets_updated = facet_dicts != old_facets
 
         # Check if the terms or facets have been updated. If both weren't updated,
         # then we can just update the data payload and short circuit.
