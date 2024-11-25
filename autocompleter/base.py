@@ -172,25 +172,26 @@ class AutocompleterProviderBase(AutocompleterBase):
         return old_terms
 
     @classmethod
-    def get_old_facets(cls, obj_id):
+    # Todo: Rename this to get_old_facet_dicts or get_old_facet_data
+    def get_old_facet_dicts(cls, obj_id):
         facet_map_name = FACET_MAP_BASE_NAME % (cls.get_provider_name(),)
-        old_facets = REDIS.hget(facet_map_name, obj_id)
-        if old_facets is not None:
-            old_facets = cls._deserialize_data(old_facets)
-        return old_facets
+        old_facet_dicts = REDIS.hget(facet_map_name, obj_id)
+        if old_facet_dicts is not None:
+            old_facet_dicts = cls._deserialize_data(old_facet_dicts)
+        return old_facet_dicts
 
     @classmethod
-    def clear_facets(cls, obj_id, old_facets):
+    def clear_facets(cls, obj_id, old_facet_dicts):
         """
         For a given object ID, delete old facet data from Redis.
         """
         provider_name = cls.get_provider_name()
         pipe = REDIS.pipeline()
         # Remove old facets from the corresponding facet sorted set containing scores
-        for facet in old_facets:
+        for facet_dict in old_facet_dicts:
             try:
-                facet_name = facet["key"]
-                facet_value = facet["value"]
+                facet_name = facet_dict["key"]
+                facet_value = facet_dict["value"]
                 facet_set_name = FACET_SET_BASE_NAME % (
                     provider_name,
                     facet_name,
@@ -287,21 +288,21 @@ class AutocompleterProviderBase(AutocompleterBase):
         norm_terms = self.__class__._get_norm_terms(terms)
         score = self._get_score()
         data = self.get_data()
-        facets = self.get_facets()
+        facet_names = self.get_facets()
 
         # Get all the facet values from the data dict
         facet_dicts = []
-        for facet in facets:
+        for facet_name in facet_names:
             try:
-                facet_dicts.append({"key": facet, "value": data[facet]})
+                facet_dicts.append({"key": facet_name, "value": data[facet_name]})
             except KeyError:
                 continue
 
         old_norm_terms = self.__class__.get_old_norm_terms(obj_id)
-        old_facets = self.__class__.get_old_facets(obj_id)
+        old_facet_dicts = self.__class__.get_old_facet_dicts(obj_id)
 
         norm_terms_updated = norm_terms != old_norm_terms
-        facets_updated = facets != old_facets
+        facets_updated = facet_names != old_facet_dicts
 
         # Check if the terms or facets have been updated. If both weren't updated,
         # then we can just update the data payload and short circuit.
@@ -317,8 +318,8 @@ class AutocompleterProviderBase(AutocompleterBase):
             # doing 2 extra redis queries.
             if norm_terms_updated and old_norm_terms is not None:
                 self.__class__.clear_keys(obj_id, old_norm_terms)
-            if facets_updated and old_facets is not None:
-                self.__class__.clear_facets(obj_id, old_facets)
+            if facets_updated and old_facet_dicts is not None:
+                self.__class__.clear_facets(obj_id, old_facet_dicts)
 
         # Start pipeline
         pipe = REDIS.pipeline()
@@ -362,11 +363,11 @@ class AutocompleterProviderBase(AutocompleterBase):
                 key = EXACT_SET_BASE_NAME % (provider_name,)
                 pipe.sadd(key, norm_term)
 
-        for facet in facet_dicts:
+        for facet_dict in facet_dicts:
             key = FACET_SET_BASE_NAME % (
                 provider_name,
-                facet["key"],
-                facet["value"],
+                facet_dict["key"],
+                facet_dict["value"],
             )
             pipe.zadd(key, {obj_id: score})
 
@@ -396,9 +397,9 @@ class AutocompleterProviderBase(AutocompleterBase):
         terms = self.__class__.get_old_norm_terms(obj_id)
         if terms is not None:
             self.__class__.clear_keys(obj_id, terms)
-        facets = self.__class__.get_old_facets(obj_id)
-        if facets is not None:
-            self.__class__.clear_facets(obj_id, facets)
+        facet_dicts = self.__class__.get_old_facet_dicts(obj_id)
+        if facet_dicts is not None:
+            self.__class__.clear_facets(obj_id, facet_dicts)
 
 
 class AutocompleterModelProvider(AutocompleterProviderBase):
@@ -594,7 +595,7 @@ class Autocompleter(AutocompleterBase):
         if len(keys) > 0:
             REDIS.delete(*keys)
 
-    def suggest(self, term, facets=[]):
+    def suggest(self, term, facet_groups=[]):
         """
         Suggest matching objects, given a term
         """
@@ -603,7 +604,7 @@ class Autocompleter(AutocompleterBase):
             return []
 
         # If we have a cached version of the search results available, return it!
-        hashed_facets = self.hash_facets(facets)
+        hashed_facets = self.hash_facets(facet_groups)
         cache_key = CACHE_BASE_NAME % (
             self.name,
             utils.get_normalized_term(term, settings.JOIN_CHARS),
@@ -637,13 +638,13 @@ class Autocompleter(AutocompleterBase):
             facet_final_exact_match_key,
         }
 
-        facet_keys_set = set()
-        if len(facets) > 0:
+        facet_names_set = set()
+        if len(facet_groups) > 0:
             # we use from_iterable to flatten the list comprehension into a single list
-            sub_facets = itertools.chain.from_iterable(
-                [facet["facets"] for facet in facets]
+            facet_dicts = itertools.chain.from_iterable(
+                [facet_group["facets"] for facet_group in facet_groups]
             )
-            facet_keys_set = set([sub_facet["key"] for sub_facet in sub_facets])
+            facet_names_set = set([facet_dict["key"] for facet_dict in facet_dicts])
 
         MOVE_EXACT_MATCHES_TO_TOP = registry.get_autocompleter_setting(
             self.name, "MOVE_EXACT_MATCHES_TO_TOP"
@@ -689,21 +690,21 @@ class Autocompleter(AutocompleterBase):
                 pipe.zunionstore(final_result_key, term_result_keys, aggregate="MIN")
 
             use_facets = False
-            if len(facet_keys_set) > 0:
-                provider_keys_set = set(provider.get_facets())
-                if facet_keys_set.issubset(provider_keys_set):
+            if len(facet_names_set) > 0:
+                provider_facet_names_set = set(provider.get_facets())
+                if facet_names_set.issubset(provider_facet_names_set):
                     use_facets = True
 
             if use_facets:
-                facet_result_keys = []
-                for facet in facets:
+                facet_group_result_keys = []
+                for facet_group in facet_groups:
                     try:
-                        facet_type = facet["type"]
+                        facet_type = facet_group["type"]
                         if facet_type not in ["and", "or"]:
                             continue
-                        facet_list = facet["facets"]
+                        facet_dict_list = facet["facets"]
                         facet_set_keys = []
-                        for facet_dict in facet_list:
+                        for facet_dict in facet_dict_list:
                             facet_set_key = FACET_SET_BASE_NAME % (
                                 provider_name,
                                 facet_dict["key"],
@@ -712,10 +713,10 @@ class Autocompleter(AutocompleterBase):
                             facet_set_keys.append(facet_set_key)
 
                         if len(facet_set_keys) == 1:
-                            facet_result_keys.append(facet_set_keys[0])
+                            facet_group_result_keys.append(facet_set_keys[0])
                         else:
                             facet_result_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
-                            facet_result_keys.append(facet_result_key)
+                            facet_group_result_keys.append(facet_result_key)
                             keys_to_delete.add(facet_result_key)
                             if facet_type == "and":
                                 pipe.zinterstore(
@@ -728,12 +729,14 @@ class Autocompleter(AutocompleterBase):
                     except KeyError:
                         continue
 
-                # We want to calculate the intersection of all the intermediate facet sets created so far
-                # along with the final result set. So we append the final_result_key to the list of
-                # facet_result_keys and store the intersection in the faceted final result set.
+                # In order for a result to be considered as a valid result for the suggest call, it must be a term match
+                # AND match the conditions of each facet group. So, to narrow down the possible results set to match
+                # these conditions we want to calculate the intersection of:
+                # - The set of matching results for each facet group (facet_group_result_keys)
+                # - The current running set of term match results. (final_result_key)
                 pipe.zinterstore(
                     facet_final_result_key,
-                    facet_result_keys + [final_result_key],
+                    facet_group_result_keys + [final_result_key],
                     aggregate="MIN",
                 )
 
@@ -770,7 +773,7 @@ class Autocompleter(AutocompleterBase):
                 if use_facets:
                     pipe.zinterstore(
                         facet_final_exact_match_key,
-                        facet_result_keys + [final_exact_match_key],
+                        facet_group_result_keys + [final_exact_match_key],
                         aggregate="MIN",
                     )
                     pipe.zrange(facet_final_exact_match_key, 0, MAX_RESULTS - 1)
@@ -1031,31 +1034,31 @@ class Autocompleter(AutocompleterBase):
             yield lst[i : i + chunk_size]
 
     @staticmethod
-    def hash_facets(facets):
+    def hash_facets(facet_groups):
         """
-        Given an array of facet data, return a deterministic hash such that
-        the ordering of keys inside the facet dicts does not matter.
+        Given an array of facet group data, return a deterministic hash such that
+        the ordering of keys inside the groups' facet dicts does not matter.
         """
 
         def sha1_digest(my_str):
             return sha1(my_str.encode(encoding="UTF-8")).hexdigest()
 
-        facet_hashes = []
-        for facet in facets:
-            sub_facet_hashes = []
-            facet_type = facet["type"]
-            sub_facets = facet["facets"]
-            for sub_facet in sub_facets:
-                sub_facet_str = (
-                    "key:" + sub_facet["key"] + "value:" + str(sub_facet["value"])
+        facet_group_hashes = []
+        for facet_group in facet_groups:
+            facet_dict_hashes = []
+            facet_group_type = facet_group["type"]
+            facet_dicts = facet_group["facets"]
+            for facet_dict in facet_dicts:
+                facet_dict_str = (
+                    "key:" + facet_dict["key"] + "value:" + str(facet_dict["value"])
                 )
-                sub_facet_hashes.append(sha1_digest(sub_facet_str))
-            sub_facet_hashes.sort()
-            facet_str = "type:" + facet_type + "facets:" + str(sub_facet_hashes)
-            facet_hashes.append(sha1_digest(facet_str))
-        facet_hashes.sort()
-        final_facet_hash = sha1_digest(str(facet_hashes))
-        return final_facet_hash
+                facet_dict_hashes.append(sha1_digest(facet_dict_str))
+            facet_dict_hashes.sort()
+            facet_group_str = "type:" + facet_group_type + "facets:" + str(facet_dict_hashes)
+            facet_group_hashes.append(sha1_digest(facet_group_str))
+        facet_group_hashes.sort()
+        final_hash = sha1_digest(str(facet_group_hashes))
+        return final_hash
 
     @staticmethod
     def normalize_rounding(value):
