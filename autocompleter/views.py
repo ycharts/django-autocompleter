@@ -13,11 +13,11 @@ class SuggestView(View):
             term = request.GET[settings.SUGGEST_PARAMETER_NAME]
             ac = Autocompleter(name)
             if settings.FACET_PARAMETER_NAME in request.GET:
-                facets = request.GET[settings.FACET_PARAMETER_NAME]
-                facets = json.loads(facets)
-                if not self.validate_facets(facets):
+                facet_groups = request.GET[settings.FACET_PARAMETER_NAME]
+                facet_groups = json.loads(facet_groups)
+                if not self.validate_facets(facet_groups):
                     return HttpResponseBadRequest("Malformed facet parameter.")
-                results = ac.suggest(term, facets=facets)
+                results = ac.suggest(term, facets=facet_groups)
             else:
                 results = ac.suggest(term)
 
@@ -26,22 +26,22 @@ class SuggestView(View):
         return HttpResponseServerError("Search parameter not found.")
 
     @staticmethod
-    def validate_facets(facets):
+    def validate_facets(facet_groups):
         """
-        Validates the facets list has all the keys we expect as well
+        Validates the list of facet groups has all the keys we expect as well
         as the correct facet types.
         """
-        for facet in facets:
+        for facet_group in facet_groups:
             try:
-                facet_type = facet["type"]
+                facet_type = facet_group["type"]
                 if facet_type not in ["and", "or"]:
                     return False
-                sub_facets = facet["facets"]
-                if len(sub_facets) == 0:
+                facet_dicts = facet_group["facets"]
+                if len(facet_dicts) == 0:
                     return False
-                for sub_facet in sub_facets:
-                    sub_facet["key"]
-                    sub_facet["value"]
+                for facet_dict in facet_dicts:
+                    facet_dict["key"]
+                    facet_dict["value"]
             except (KeyError, TypeError):
                 return False
         return True
