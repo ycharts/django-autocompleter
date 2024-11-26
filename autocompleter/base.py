@@ -595,10 +595,12 @@ class Autocompleter(AutocompleterBase):
         if len(keys) > 0:
             REDIS.delete(*keys)
 
-    def suggest(self, term, facet_groups=[]):
+    def suggest(self, term, facets=[]):
         """
-        Suggest matching objects, given a term
+        Suggest matching objects, given a term and optional facets
         """
+        facet_groups = facets
+
         providers = self._get_all_providers_by_autocompleter()
         if providers is None:
             return []
@@ -702,7 +704,7 @@ class Autocompleter(AutocompleterBase):
                         facet_type = facet_group["type"]
                         if facet_type not in ["and", "or"]:
                             continue
-                        facet_dict_list = facet["facets"]
+                        facet_dict_list = facet_group["facets"]
                         facet_set_keys = []
                         for facet_dict in facet_dict_list:
                             facet_set_key = FACET_SET_BASE_NAME % (
