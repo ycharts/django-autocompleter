@@ -275,6 +275,7 @@ class AutocompleterProviderBase(AutocompleterBase):
         """
         return True
 
+    # This should cause no tests to fail because it is only a comment
     def store(self, delete_old=True):
         """
         Add an object to the autocompleter
