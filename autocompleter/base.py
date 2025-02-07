@@ -1,9 +1,10 @@
+import itertools
+import json
+import uuid
 from collections import OrderedDict
 from hashlib import sha1
+
 import redis
-import json
-import itertools
-import uuid
 
 from autocompleter import registry, settings, utils
 
@@ -1071,3 +1072,188 @@ class Autocompleter(AutocompleterBase):
             return int((round(value) + (abs(value) / value) * 1))
         else:
             return int(round(value))
+
+    def update_all(self):
+        """
+        WRITE SOMETHING COOL HERE
+        """
+        for provider_class in self._get_all_providers_by_autocompleter():
+            self.update_provider(provider_class)
+
+    def update_provider(self, provider_class):
+        """
+        WRITE AN INSIGHTFUL INTRODUCTION HERE
+        """
+        provider_name = provider_class.get_provider_name()
+        obj_score_map = dict()
+        # Init facets mapping
+        facets_live_set = set()
+        facets_live_map = dict()
+        facets_live_list_of_dicts_map = dict()
+        # Init terms mappings
+        prefixes_live_set = set()
+        prefixes_db_set = set()
+        prefixes_live_map = dict()
+        prefixes_db_map = dict()
+
+        terms_live_map = dict()
+        for obj in provider_class.get_iterator():
+            provider = provider_class(obj)
+            obj_id = provider.get_item_id()
+
+            # Mantain a mapping of each obj's score for later insertion into the sorted sets
+            obj_score_map[obj_id] = provider._get_score()
+
+            terms = provider.get_terms()
+            # TODO: Look into improving performance here
+            norm_terms = provider.__class__._get_norm_terms(terms) or []
+            old_norm_terms = provider.__class__.get_old_norm_terms(obj_id) or []
+
+            terms_live_map[obj_id] = norm_terms
+
+            # We store each obj's current prefixes (i.e. live data) and old prefixes (i.e. data in
+            # db) and store them in sets for quick comparisons. We use frozensets because we will be
+            # inserting them later in another set and need the data structure to be hashable (normal
+            # sets aren't hashable, only immutable ones)
+            live_obj_prefixes = frozenset(
+                word[:x]
+                for norm_term in norm_terms
+                for word in norm_term.split(" ")
+                for x in range(1, len(word) + 1)
+            )
+            db_obj_prefixes = frozenset(
+                {
+                    word[:x]
+                    for old_norm_term in old_norm_terms
+                    for word in old_norm_term.split(" ")
+                    for x in range(1, len(word) + 1)
+                }
+            )
+            # TODO: Look if we can remove this high level set completely
+            # Add a tuple of the form (obj_id, {obj_prefixes_set}) into a high-level set of all
+            # objects within the provider for quick comparison
+            prefixes_live_set.add((obj_id, live_obj_prefixes))
+            prefixes_db_set.add((obj_id, db_obj_prefixes))
+            # Since sets are not subscriptable, we mantain a mapping of obj_ids and set of prefixes
+            # to have an accessible reference later on
+            prefixes_live_map[obj_id] = live_obj_prefixes
+            prefixes_db_map[obj_id] = db_obj_prefixes
+
+            facets = provider.get_facets()
+            data = provider.get_data()
+            facet_dicts = []
+            for facet in facets:
+                try:
+                    facet_dicts.append({"key": facet, "value": data[facet]})
+                except KeyError:
+                    continue
+            # Mantain a mapping of each obj's facets list of dicts to store it in DB later if needed
+            facets_live_list_of_dicts_map[obj_id] = facet_dicts
+            # Also mantain a set of (obj_id, {obj_facets}) tuples
+            facets_set = frozenset({(f["key"], f["value"]) for f in facet_dicts})
+            facets_live_set.add((obj_id, facets_set))
+            facets_live_map[obj_id] = facets_set
+
+        #########
+        # FACETS
+        #########
+
+        # Fetch all the facets in the DB in a single query.
+        # We take advantage that Python dicts are ordered, so keys() always returns the same ordered
+        # list to build the mapping of facets in DB and compare them
+        facet_map_key = FACET_MAP_BASE_NAME % provider_class.get_provider_name()
+        facets_db_list_of_dicts_map = {
+            obj_id: self._deserialize_data(facets or b"[]")  # BAD HACK
+            for obj_id, facets in zip(
+                facets_live_map.keys(),
+                REDIS.hmget(facet_map_key, facets_live_map.keys()),
+            )
+        }
+        facets_db_map = {
+            obj_id: frozenset((f["key"], f["value"]) for f in facet_list_of_dicts)
+            for obj_id, facet_list_of_dicts in facets_db_list_of_dicts_map.items()
+        }
+        # Build the DB facets into a set for quick comparisons
+        facets_db_set = {
+            (obj_id, facets_set) for obj_id, facets_set in facets_db_map.items()
+        }
+        objs_with_updated_facets = facets_live_set ^ facets_db_set
+        for obj_id, _ in objs_with_updated_facets:
+            live_obj_facets = facets_live_map[obj_id]
+            db_obj_facets = facets_db_map[obj_id]
+
+            for key, value in live_obj_facets - db_obj_facets:
+                key = FACET_SET_BASE_NAME % (provider_name, key, value)
+                REDIS.zadd(key, {obj_id: obj_score_map[obj_id]})
+            for key, value in db_obj_facets - live_obj_facets:
+                key = FACET_SET_BASE_NAME % (provider_name, key, value)
+                REDIS.zrem(key, obj_id)
+
+        # Bulk update all needed facets in a single operation
+        facets_to_update = {
+            obj_id: self._serialize_data(facets_live_list_of_dicts_map[obj_id])
+            for obj_id, _ in facets_live_set - facets_db_set
+        }
+        if facets_to_update:
+            REDIS.hset(facet_map_key, mapping=facets_to_update)
+
+        # Keys that are present in DB but not in the live data indicate objects
+        # that were deleted. We remove them all in one operation
+        obj_deleted = set(facets_db_map.keys()) - set(
+            facets_live_list_of_dicts_map.keys()
+        )
+        if obj_deleted:
+            REDIS.hdel(facet_map_key, obj_deleted)
+
+        ############
+        # NORM TERMS
+        ############
+        # Since we're comparing sets whose elements have the form (obj_id, {set of terms}), then any
+        # difference between old and new terms will show up in the symmetric difference between the two
+        objs_with_updated_terms = prefixes_live_set ^ prefixes_db_set
+        for obj_id, _ in objs_with_updated_terms:
+            # Symmetric difference tells us which objects need to be updated but we don't know
+            # which element comes from which set, so we retrieve the prefixes from the prefix mappings to
+            # compare them
+            live_obj_prefixes = prefixes_live_map[obj_id]
+            db_obj_prefixes = prefixes_db_map[obj_id]
+
+            # Prefixes in the live set but not in the DB are new prefixes found in its terms
+            for prefix in live_obj_prefixes - db_obj_prefixes:
+                key = PREFIX_BASE_NAME % (provider_name, prefix)
+                REDIS.zadd(key, {obj_id: obj_score_map[obj_id]})
+
+            # Prefixes in the DB but not in the live set are prefixes that got removed
+            for prefix in db_obj_prefixes - live_obj_prefixes:
+                key = PREFIX_BASE_NAME % (provider_name, prefix)
+                REDIS.zrem(key, obj_id)
+
+        # Do relevant updates to high-level prefix set within the provider
+        all_prefixes_in_db = {
+            x for _, prefix_set in prefixes_db_set for x in prefix_set
+        }
+        all_prefixes_in_live_data = {
+            x for _, prefix_set in prefixes_live_set for x in prefix_set
+        }
+
+        key = PREFIX_SET_BASE_NAME % (provider_name,)
+        if to_remove := all_prefixes_in_db - all_prefixes_in_live_data:
+            REDIS.srem(key, *to_remove)
+        if to_add := all_prefixes_in_live_data - all_prefixes_in_db:
+            REDIS.sadd(key, *to_add)
+
+        if obj_ids_with_updated_terms := {
+            obj_id for obj_id, _ in objs_with_updated_terms
+        }:
+            mapping = {
+                obj_id: self._serialize_data(terms_live_map[obj_id])
+                for obj_id in obj_ids_with_updated_terms
+            }
+            REDIS.hset(
+                TERM_MAP_BASE_NAME % provider_name,
+                mapping=mapping,
+            )
+
+        #############
+        # EXACT TERMS
+        #############
