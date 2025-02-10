@@ -2,18 +2,24 @@
 # -*- coding: utf-8 -*-
 
 
-from test_app.tests.base import AutocompleterTestCase
-from test_app.models import Stock, Indicator
+from unittest.mock import MagicMock, patch
+
+from autocompleter import Autocompleter, base, registry, signal_registry
+from autocompleter import settings as auto_settings
+from autocompleter.registry import (
+    add_obj_to_autocompleter,
+    remove_obj_from_autocompleter,
+)
+
+from test_app import calc_info
 from test_app.autocompleters import (
     CalcAutocompleteProvider,
     FacetedStockAutocompleteProvider,
+    IndicatorAliasedAutocompleteProvider,
     StockAutocompleteProvider,
 )
-from test_app import calc_info
-from autocompleter import base, Autocompleter, registry, signal_registry
-from autocompleter.registry import add_obj_to_autocompleter, remove_obj_from_autocompleter
-from autocompleter import settings as auto_settings
-from unittest.mock import patch, MagicMock
+from test_app.models import Indicator, Stock
+from test_app.tests.base import AutocompleterTestCase
 
 
 class StoringAndRemovingTestCase(AutocompleterTestCase):
@@ -484,8 +490,8 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
 
         signal_registry.unregister(Stock)
 
-    @patch('autocompleter.base.AutocompleterProviderBase.store')
-    @patch('autocompleter.base.AutocompleterProviderBase.remove')
+    @patch("autocompleter.base.AutocompleterProviderBase.store")
+    @patch("autocompleter.base.AutocompleterProviderBase.remove")
     def test_signal_based_add_and_remove_error_handlers(self, mock_remove, mock_store):
         """
         Errors are properly handled when add or remove signal is sent.
@@ -498,7 +504,9 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
         mock_store.side_effect = Exception()
         aapl = Stock(symbol="AAPL", name="Apple", market_cap=50)
 
-        signal_registry.register(Stock, add_error_handler=add_handler, remove_error_handler=remove_handler)
+        signal_registry.register(
+            Stock, add_error_handler=add_handler, remove_error_handler=remove_handler
+        )
 
         aapl.save()
         # There are 2 autocompleter providers for the Stock model. Therefore expect two error handler calls
@@ -509,8 +517,8 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
 
         signal_registry.unregister(Stock)
 
-    @patch('autocompleter.base.AutocompleterProviderBase.store')
-    @patch('autocompleter.base.AutocompleterProviderBase.remove')
+    @patch("autocompleter.base.AutocompleterProviderBase.store")
+    @patch("autocompleter.base.AutocompleterProviderBase.remove")
     def test_add_and_remove_error_handlers(self, mock_remove, mock_store):
         """
         Errors are properly handled when adding or removing manually
@@ -523,7 +531,13 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
         mock_store.side_effect = Exception()
         aapl = Stock(symbol="AAPL", name="Apple", market_cap=50)
 
-        add_obj_to_autocompleter(Stock, aapl, False, add_error_handler=add_handler, remove_error_handler=remove_handler)
+        add_obj_to_autocompleter(
+            Stock,
+            aapl,
+            False,
+            add_error_handler=add_handler,
+            remove_error_handler=remove_handler,
+        )
         # There are 2 autocompleter providers for the Stock model. Therefore expect two error handler calls
         self.assertEqual(add_handler.call_count, 2)
 
@@ -532,8 +546,8 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
 
         signal_registry.unregister(Stock)
 
-    @patch('autocompleter.base.AutocompleterProviderBase.store')
-    @patch('autocompleter.base.AutocompleterProviderBase.remove')
+    @patch("autocompleter.base.AutocompleterProviderBase.store")
+    @patch("autocompleter.base.AutocompleterProviderBase.remove")
     def test_unregister_removes_error_handlers(self, mock_remove, mock_store):
         """
         Unregistering removes registered error handling
@@ -545,7 +559,9 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
         mock_store.side_effect = Exception()
         aapl = Stock(symbol="AAPL", name="Apple", market_cap=50)
 
-        signal_registry.register(Stock, add_error_handler=add_handler, remove_error_handler=remove_handler)
+        signal_registry.register(
+            Stock, add_error_handler=add_handler, remove_error_handler=remove_handler
+        )
 
         # re register Stock without error handlers
         signal_registry.unregister(Stock)
@@ -598,3 +614,142 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
         registry.register("stock", StockAutocompleteProvider)
         providers = registry.get_all_by_autocompleter("stock")
         self.assertEqual(len(providers), 1)
+
+
+class UpdateTestCase(AutocompleterTestCase):
+    fixtures = ["stock_test_data_small.json", "indicator_test_data_small.json"]
+
+    def test_update_facets(self):
+        """
+        A
+        """
+
+        autocomp = Autocompleter("faceted_stock")
+        autocomp.store_all()
+
+        # Change AAPL's sector to 'Food'
+        aapl = Stock.objects.get(symbol="AAPL")
+        aapl.sector = "Food"
+        aapl.save()
+
+        # Original facets are ['sector', 'industry'] and we're patching them to ['sector', 'search_name']
+        with patch.object(
+            FacetedStockAutocompleteProvider,
+            "get_facets",
+            return_value=["sector", "search_name"],
+        ):
+            autocomp.update_all()
+
+        provider_name = FacetedStockAutocompleteProvider.get_provider_name()
+        facet_set_key = base.FACET_SET_BASE_NAME % (provider_name, "{}", "{}")
+        # AAPL is in djac.test.faceted_stock.sector.Food
+        self.assertIsNotNone(
+            self.redis.zscore(facet_set_key.format("sector", "Food"), aapl.id)
+        )
+        # AAPL is in djac.test.faceted_stock.search_symbol.AAPL
+        self.assertIsNotNone(
+            self.redis.zscore(facet_set_key.format("search_name", "AAPL"), aapl.id)
+        )
+
+        # AAPL is no longer in djac.test.faceted_stock.sector.Technology
+        self.assertIsNone(
+            self.redis.zscore(facet_set_key.format("sector", "Technology"), aapl.id)
+        )
+        # AAPL is no longer in djac.test.faceted_stock.industry.Consumer Electronics
+        self.assertIsNone(
+            self.redis.zscore(
+                facet_set_key.format("industry", "Consumer Electronics"), aapl.id
+            )
+        )
+        facet_map_key = base.FACET_MAP_BASE_NAME % (provider_name,)
+        facet_data = autocomp._deserialize_data(self.redis.hget(facet_map_key, aapl.id))
+        # Facet list was updated for AAPL in djac.test.faceted_stock
+        self.assertEqual(
+            facet_data,
+            [
+                {"key": "sector", "value": aapl.sector},
+                {"key": "search_name", "value": aapl.symbol},
+            ],
+        )
+
+    def test_terms_add_new_term(self):
+        """
+        A
+        """
+        autocomp = Autocompleter("indicator_aliased")
+        autocomp.store_all()
+
+        provider_name = IndicatorAliasedAutocompleteProvider.get_provider_name()
+        # Original name for indicator is "US Unemployment Rate"
+        unemployment = Indicator.objects.get(internal_name="unemployment_rate")
+        new_term = "xyzqwer"
+        unemployment.name += f" {new_term}"
+        unemployment.save()
+
+        autocomp.update_all()
+
+        # Verify that all new prefixes were added
+        new_prefixes = [new_term[:x] for x in range(1, len(new_term) + 1)]
+        for prefix in new_prefixes:
+            # Obj id lives in djac.test.indal.p.[x, xy, xyz, xyzq, ...]
+            prefix_key = base.PREFIX_BASE_NAME % (provider_name, prefix)
+            self.assertIsNotNone(self.redis.zscore(prefix_key, unemployment.id))
+
+            # The prefix is present in djac.test.indal.ps
+            self.assertTrue(
+                self.redis.sismember(base.PREFIX_SET_BASE_NAME % provider_name, prefix)
+            )
+
+        # Verify that the list of norm terms was updated in djac.test.indal
+        norm_terms_in_db = Autocompleter._deserialize_data(
+            self.redis.hget(base.TERM_MAP_BASE_NAME % provider_name, unemployment.id)
+        )
+        updated_norm_terms = IndicatorAliasedAutocompleteProvider._get_norm_terms(
+            IndicatorAliasedAutocompleteProvider(unemployment).get_terms()
+        )
+        self.assertEqual(norm_terms_in_db, updated_norm_terms)
+
+    def test_terms_remove_term(self):
+        """
+        A
+        """
+
+        # Modify the indicator's name before storing
+        unemployment = Indicator.objects.get(internal_name="unemployment_rate")
+        original_name = unemployment.name
+        new_term = "xyzqwer"
+        unemployment.name += f" {new_term}"
+        unemployment.save()
+
+        # Store them all
+        autocomp = Autocompleter("indicator_aliased")
+        autocomp.store_all()
+
+        # Update the indicator's name to its original name
+        unemployment = Indicator.objects.get(internal_name="unemployment_rate")
+        unemployment.name = original_name
+        unemployment.save()
+
+        # Update the autocompleter
+        autocomp.update_all()
+
+        provider_name = IndicatorAliasedAutocompleteProvider.get_provider_name()
+        # Verify that all removed prefixes were deleted
+        removed_prefixes = [new_term[:x] for x in range(1, len(new_term) + 1)]
+        for prefix in removed_prefixes:
+            # Obj id no longer lives in djac.test.indal.p.[x, xy, xyz, xyzq, ...]
+            prefix_key = base.PREFIX_BASE_NAME % (provider_name, prefix)
+            self.assertIsNone(self.redis.zscore(prefix_key, unemployment.id))
+
+            # The prefix is not present in djac.test.indal.ps
+            self.assertFalse(
+                self.redis.sismember(base.PREFIX_SET_BASE_NAME % provider_name, prefix)
+            )
+        # Verify that the list of norm terms was updated in djac.test.indal
+        norm_terms_in_db = Autocompleter._deserialize_data(
+            self.redis.hget(base.TERM_MAP_BASE_NAME % provider_name, unemployment.id)
+        )
+        updated_norm_terms = IndicatorAliasedAutocompleteProvider._get_norm_terms(
+            IndicatorAliasedAutocompleteProvider(unemployment).get_terms()
+        )
+        self.assertEqual(norm_terms_in_db, updated_norm_terms)
