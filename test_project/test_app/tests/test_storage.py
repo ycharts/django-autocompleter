@@ -621,9 +621,8 @@ class UpdateTestCase(AutocompleterTestCase):
 
     def test_update_facets(self):
         """
-        A
+        Updating an obj's facets updates the relevant redis objects
         """
-
         autocomp = Autocompleter("faceted_stock")
         autocomp.store_all()
 
@@ -638,7 +637,7 @@ class UpdateTestCase(AutocompleterTestCase):
             "get_facets",
             return_value=["sector", "search_name"],
         ):
-            autocomp.update_all()
+            autocomp.update_all(clear_cache=False)
 
         provider_name = FacetedStockAutocompleteProvider.get_provider_name()
         facet_set_key = base.FACET_SET_BASE_NAME % (provider_name, "{}", "{}")
@@ -674,8 +673,9 @@ class UpdateTestCase(AutocompleterTestCase):
 
     def test_terms_add_new_term(self):
         """
-        A
+        Adding a new term to an object updates the relevant redis objects
         """
+        setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
         autocomp = Autocompleter("indicator_aliased")
         autocomp.store_all()
 
@@ -686,7 +686,12 @@ class UpdateTestCase(AutocompleterTestCase):
         unemployment.name += f" {new_term}"
         unemployment.save()
 
-        autocomp.update_all()
+        # Store a reference to previous norm terms, before updating
+        original_norm_terms_in_db = Autocompleter._deserialize_data(
+            self.redis.hget(base.TERM_MAP_BASE_NAME % provider_name, unemployment.id)
+        )
+
+        autocomp.update_all(clear_cache=False)
 
         # Verify that all new prefixes were added
         new_prefixes = [new_term[:x] for x in range(1, len(new_term) + 1)]
@@ -700,18 +705,27 @@ class UpdateTestCase(AutocompleterTestCase):
                 self.redis.sismember(base.PREFIX_SET_BASE_NAME % provider_name, prefix)
             )
 
+        terms = IndicatorAliasedAutocompleteProvider(unemployment).get_terms()
+        updated_norm_terms = IndicatorAliasedAutocompleteProvider._get_norm_terms(terms)
+        # Verify that all new terms got inserted
+        for term in updated_norm_terms:
+            key = base.EXACT_BASE_NAME % (provider_name, term)
+            self.assertIsNotNone(self.redis.zscore(key, unemployment.id))
+
+        # Verify that all the old terms are no longer present
+        for term in original_norm_terms_in_db:
+            key = base.EXACT_BASE_NAME % (provider_name, term)
+            self.assertIsNone(self.redis.zscore(key, unemployment.id))
+
         # Verify that the list of norm terms was updated in djac.test.indal
         norm_terms_in_db = Autocompleter._deserialize_data(
             self.redis.hget(base.TERM_MAP_BASE_NAME % provider_name, unemployment.id)
-        )
-        updated_norm_terms = IndicatorAliasedAutocompleteProvider._get_norm_terms(
-            IndicatorAliasedAutocompleteProvider(unemployment).get_terms()
         )
         self.assertEqual(norm_terms_in_db, updated_norm_terms)
 
     def test_terms_remove_term(self):
         """
-        A
+        Removing a term from an object updates the relevant redis objects
         """
 
         # Modify the indicator's name before storing
@@ -731,7 +745,7 @@ class UpdateTestCase(AutocompleterTestCase):
         unemployment.save()
 
         # Update the autocompleter
-        autocomp.update_all()
+        autocomp.update_all(clear_cache=False)
 
         provider_name = IndicatorAliasedAutocompleteProvider.get_provider_name()
         # Verify that all removed prefixes were deleted
@@ -753,3 +767,47 @@ class UpdateTestCase(AutocompleterTestCase):
             IndicatorAliasedAutocompleteProvider(unemployment).get_terms()
         )
         self.assertEqual(norm_terms_in_db, updated_norm_terms)
+
+    def test_obj_deleted(self):
+        # Store all objects
+        autocomp = Autocompleter("metric")
+        autocomp.store_all()
+
+        # Delete a calc
+        calc = CalcAutocompleteProvider.obj_dict.pop()
+        provider = CalcAutocompleteProvider(calc)
+        obj_id = provider.get_item_id()
+        provider_name = provider.get_provider_name()
+        terms = provider._get_norm_terms(provider.get_terms())
+
+        autocomp.update_all()
+
+        exact_map_key = base.EXACT_SET_BASE_NAME % provider_name
+        self.assertFalse(self.redis.simsmember(exact_map_key, *terms))
+        for term in terms:
+            key = base.EXACT_BASE_NAME % (provider_name, term)
+            self.assertIsNone(self.redis.zscore(key, obj_id))
+
+        prefixes = {term[:x] for x in range(1, len(term) + 1) for term in terms}
+        prefixes_map_key = base.PREFIX_SET_BASE_NAME % provider_name
+        self.assertFalse(self.redis.smismember(prefixes_map_key, *prefixes))
+        for prefix in prefixes:
+            key = base.PREFIX_BASE_NAME % (provider_name, prefix)
+            self.assertIsNone(self.redis.zscore(key, obj_id))
+
+        facets = {}
+        facets_map_key = base.FACET_MAP_BASE_NAME % provider
+        self.assertFalse(self.redis.smismember(facets_map_key, *facets))
+        for facet in facets:
+            key = base.FACET_SET_BASE_NAME % (
+                provider_name,
+                facet["key"],
+                facet["value"],
+            )
+            self.assertIsNone(self.redis.zscore(key, obj_id))
+
+        term_map_key = base.TERM_MAP_BASE_NAME % provider_name
+        self.assertFalse(self.redis.hexists(term_map_key, obj_id))
+
+        data_map_key = base.AUTO_BASE_NAME % provider_name
+        self.assertFalse(self.redis.hexists(data_map_key, obj_id))
