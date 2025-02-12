@@ -57,6 +57,21 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         self.assertEqual(norm_terms, terms_stored)
         self.assertNotEqual(terms, terms_stored)
 
+    def test_store_score(self):
+        """
+        Storing and removing a score works
+        """
+        aapl = Stock.objects.get(symbol="AAPL")
+        provider = StockAutocompleteProvider(aapl)
+        provider.store()
+
+        keys = self.redis.hkeys("djac.test.stock.sc")
+        self.assertEqual(len(keys), 1)
+
+        provider.remove()
+        keys = self.redis.hkeys("djac.test.stock.sc")
+        self.assertEqual(len(keys), 0)
+
     def test_dict_store_and_remove(self):
         """
         Storing and removing an dictionary item works
@@ -631,7 +646,7 @@ class UpdateTestCase(AutocompleterTestCase):
         aapl.sector = "Food"
         aapl.save()
 
-        autocomp.update_all()
+        autocomp.update_all(clear_cache=False)
 
         provider = FacetedStockAutocompleteProvider(aapl)
         expected_data = provider.get_data()
@@ -701,9 +716,11 @@ class UpdateTestCase(AutocompleterTestCase):
         """
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
         autocomp = Autocompleter("indicator_aliased")
+
         autocomp.store_all()
 
         provider_name = IndicatorAliasedAutocompleteProvider.get_provider_name()
+
         # Original name for indicator is "US Unemployment Rate"
         unemployment = Indicator.objects.get(internal_name="unemployment_rate")
         new_term = "xyzqwer"
@@ -800,15 +817,15 @@ class UpdateTestCase(AutocompleterTestCase):
 
         # Delete a stock
         aapl = Stock.objects.get(symbol="AAPL")
+        obj_id = aapl.id
         aapl.delete()
 
         provider = FacetedStockAutocompleteProvider(aapl)
-        obj_id = provider.get_item_id()
         provider_name = provider.get_provider_name()
         terms = provider._get_norm_terms(provider.get_terms())
         facets = provider.get_facets_dict()
 
-        autocomp.update_all()
+        autocomp.update_all(clear_cache=False)
 
         exact_map_key = base.EXACT_SET_BASE_NAME % provider_name
         # Verify that exact terms are no longer present
@@ -844,3 +861,57 @@ class UpdateTestCase(AutocompleterTestCase):
         # Data is no longer available
         data_map_key = base.AUTO_BASE_NAME % provider_name
         self.assertFalse(self.redis.hexists(data_map_key, obj_id))
+
+        # Score is no longer in the hash map
+        score_map_key = base.SCORE_MAP_BASE_NAME % provider_name
+        self.assertFalse(self.redis.hexists(score_map_key, obj_id))
+
+    def test_update_score(self):
+        """ """
+        setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
+        autocomp = Autocompleter("faceted_stock")
+        autocomp.store_all()
+
+        # Change AAPL's score, which is mapped to its market_cap
+        new_score = 42
+        aapl = Stock.objects.get(symbol="AAPL")
+        aapl.market_cap = new_score
+        aapl.save()
+
+        expected_score = 1 / new_score
+
+        provider = FacetedStockAutocompleteProvider(aapl)
+        provider_name = provider.get_provider_name()
+        obj_id = provider.get_item_id()
+
+        autocomp.update_all(clear_cache=False)
+
+        prefixes = []
+        # New score updated in djac.test.faceted_stock.p.*
+        for prefix in prefixes:
+            prefix_key = base.PREFIX_BASE_NAME % (provider_name, prefix)
+            self.assertEqual(self.redis.zscore(prefix_key, obj_id), expected_score)
+
+        # New score updated in djac.test.faceted_stock.e.term
+        terms = FacetedStockAutocompleteProvider._get_norm_terms(provider.get_terms())
+        for term in terms:
+            key = base.EXACT_BASE_NAME % (provider_name, term)
+            self.assertEqual(self.redis.zscore(key, obj_id), expected_score)
+
+        # New score updated in djac.test.faceted_stock.f.key.value
+        facets = provider.get_facets_dict()
+        for facet in facets:
+            key = base.FACET_SET_BASE_NAME % (
+                provider_name,
+                facet["key"],
+                facet["value"],
+            )
+            self.assertEqual(self.redis.zscore(key, obj_id), expected_score)
+
+        # New score updated in djac.test.faceted_stock.sc
+        self.assertEqual(
+            Autocompleter._deserialize_data(
+                self.redis.hget(base.SCORE_MAP_BASE_NAME % provider_name, obj_id)
+            ),
+            expected_score,
+        )
