@@ -619,6 +619,30 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
 class UpdateTestCase(AutocompleterTestCase):
     fixtures = ["stock_test_data_small.json", "indicator_test_data_small.json"]
 
+    def test_update_data(self):
+        """
+        Updating an obj's data updates the relevant redis objects
+        """
+        autocomp = Autocompleter("faceted_stock")
+        autocomp.store_all()
+
+        # Change AAPL's sector to 'Food'
+        aapl = Stock.objects.get(symbol="AAPL")
+        aapl.sector = "Food"
+        aapl.save()
+
+        autocomp.update_all()
+
+        provider = FacetedStockAutocompleteProvider(aapl)
+        expected_data = provider.get_data()
+
+        data_map_key = base.AUTO_BASE_NAME % provider
+        data_in_redis = autocomp._deserialize_data(
+            self.redis.hget(data_map_key, provider.get_item_id())
+        )
+        self.assertEqual(expected_data, data_in_redis)
+        self.assertEqual(data_in_redis["sector"], "Food")
+
     def test_update_facets(self):
         """
         Updating an obj's facets updates the relevant redis objects
@@ -770,34 +794,41 @@ class UpdateTestCase(AutocompleterTestCase):
 
     def test_obj_deleted(self):
         # Store all objects
-        autocomp = Autocompleter("metric")
+        setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
+        autocomp = Autocompleter("faceted_stock")
         autocomp.store_all()
 
-        # Delete a calc
-        calc = CalcAutocompleteProvider.obj_dict.pop()
-        provider = CalcAutocompleteProvider(calc)
+        # Delete a stock
+        aapl = Stock.objects.get(symbol="AAPL")
+        aapl.delete()
+
+        provider = FacetedStockAutocompleteProvider(aapl)
         obj_id = provider.get_item_id()
         provider_name = provider.get_provider_name()
         terms = provider._get_norm_terms(provider.get_terms())
+        facets = provider.get_facets_dict()
 
         autocomp.update_all()
 
         exact_map_key = base.EXACT_SET_BASE_NAME % provider_name
-        self.assertFalse(self.redis.simsmember(exact_map_key, *terms))
+        # Verify that exact terms are no longer present
+        self.assertFalse(any(self.redis.smismember(exact_map_key, *terms)))
         for term in terms:
             key = base.EXACT_BASE_NAME % (provider_name, term)
             self.assertIsNone(self.redis.zscore(key, obj_id))
 
-        prefixes = {term[:x] for x in range(1, len(term) + 1) for term in terms}
+        # Prefixes unique to APPL are [ap, app, appl, apple]
+        prefixes = {"apple"[:x] for x in range(2, len("apple") + 1)}
         prefixes_map_key = base.PREFIX_SET_BASE_NAME % provider_name
-        self.assertFalse(self.redis.smismember(prefixes_map_key, *prefixes))
+        # Verify that no prefixes are present
+        self.assertFalse(any(self.redis.smismember(prefixes_map_key, *prefixes)))
         for prefix in prefixes:
             key = base.PREFIX_BASE_NAME % (provider_name, prefix)
             self.assertIsNone(self.redis.zscore(key, obj_id))
 
-        facets = {}
+        # Verify that no facets are present
         facets_map_key = base.FACET_MAP_BASE_NAME % provider
-        self.assertFalse(self.redis.smismember(facets_map_key, *facets))
+        self.assertFalse(self.redis.hexists(facets_map_key, obj_id))
         for facet in facets:
             key = base.FACET_SET_BASE_NAME % (
                 provider_name,
@@ -806,8 +837,10 @@ class UpdateTestCase(AutocompleterTestCase):
             )
             self.assertIsNone(self.redis.zscore(key, obj_id))
 
+        # Terms are deleted as well from the term map
         term_map_key = base.TERM_MAP_BASE_NAME % provider_name
         self.assertFalse(self.redis.hexists(term_map_key, obj_id))
 
+        # Data is no longer available
         data_map_key = base.AUTO_BASE_NAME % provider_name
         self.assertFalse(self.redis.hexists(data_map_key, obj_id))
