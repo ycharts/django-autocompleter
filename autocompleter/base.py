@@ -298,7 +298,7 @@ class AutocompleterProviderBase(AutocompleterBase):
         for facet in self.get_facets():
             try:
                 facet_dicts.append({"key": facet, "value": data[facet]})
-            except AttributeError:
+            except KeyError:
                 pass
         return facet_dicts
 
