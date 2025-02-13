@@ -74,6 +74,7 @@ jobs:
           flag-name: run-${{ matrix.python-version }}-${{ matrix.django-version }}
           path-to-lcov: coverage.lcov
           parallel: true
+          fail-on-error: false
 
   finish:
     needs: build
