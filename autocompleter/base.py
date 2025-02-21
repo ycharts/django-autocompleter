@@ -1248,13 +1248,13 @@ class Autocompleter(AutocompleterBase):
                 else live_obj_prefixes - db_obj_prefixes
             )
             for prefix in prefixes_to_add:
-                key = PREFIX_BASE_NAME % (provider_name, prefix)
-                pipe.zadd(key, {obj_id: scores_live_map[obj_id]})
+                prefix_sorted_set_key = PREFIX_BASE_NAME % (provider_name, prefix)
+                pipe.zadd(prefix_sorted_set_key, {obj_id: scores_live_map[obj_id]})
 
             # Prefixes in the DB but not in the live set are prefixes that got removed
             for prefix in db_obj_prefixes - live_obj_prefixes:
-                key = PREFIX_BASE_NAME % (provider_name, prefix)
-                pipe.zrem(key, obj_id)
+                prefix_sorted_set_key = PREFIX_BASE_NAME % (provider_name, prefix)
+                pipe.zrem(prefix_sorted_set_key, obj_id)
 
         # Build a single set of all prefixes in each data set
         all_prefixes_in_db = {
@@ -1304,12 +1304,12 @@ class Autocompleter(AutocompleterBase):
             for term in terms_to_add:
                 # Terms only get added if there are less than MAX_EXACT_MATCH_WORDS words
                 if len(term.split(" ")) <= max_word_count:
-                    key = EXACT_BASE_NAME % (provider_name, term)
-                    pipe.zadd(key, {obj_id: scores_live_map[obj_id]})
+                    exact_sorted_set_key = EXACT_BASE_NAME % (provider_name, term)
+                    pipe.zadd(exact_sorted_set_key, {obj_id: scores_live_map[obj_id]})
             # Terms in the DB but not in the live set are terms that got removed
             for term in db_obj_terms - live_obj_terms:
-                key = EXACT_BASE_NAME % (provider_name, term)
-                pipe.zrem(key, obj_id)
+                exact_sorted_set_key = EXACT_BASE_NAME % (provider_name, term)
+                pipe.zrem(exact_sorted_set_key, obj_id)
 
         # Build a single set of all terms in each data set
         all_terms_in_db = {x for _, term_set in terms_db_set for x in term_set}
@@ -1367,11 +1367,11 @@ class Autocompleter(AutocompleterBase):
                 else live_obj_facets - db_obj_facets
             )
             for key, value in facets_to_add:
-                key = FACET_SET_BASE_NAME % (provider_name, key, value)
-                pipe.zadd(key, {obj_id: scores_live_map[obj_id]})
+                facet_sorted_set_key = FACET_SET_BASE_NAME % (provider_name, key, value)
+                pipe.zadd(facet_sorted_set_key, {obj_id: scores_live_map[obj_id]})
             for key, value in db_obj_facets - live_obj_facets:
-                key = FACET_SET_BASE_NAME % (provider_name, key, value)
-                pipe.zrem(key, obj_id)
+                facet_sorted_set_key = FACET_SET_BASE_NAME % (provider_name, key, value)
+                pipe.zrem(facet_sorted_set_key, obj_id)
 
         # Bulk update the facets hash map with all needed facets in a single operation
         if facets_with_updates := facets_live_set - facets_db_set:
