@@ -1139,8 +1139,8 @@ class Autocompleter(AutocompleterBase):
 
         This method attempts to optimize the number of operations done on the Redis DB. The overall
         strategy for this is to create mappings (for quick references) and sets (for quick
-        comparisons) and preprocess operations as much as possible before htting the DB. This method
-        has 4 different main parts, each dealing with the relevant redis keys:
+        comparisons) and pre-process operations as much as possible before hitting the DB. This method
+        has 5 different parts, each dealing with the relevant redis keys:
         1. PREFIXES: Updates to ZSET djac.provider.p.prefix and HASH djac.provider.ps
         2. EXACT TERMS: Updates to ZSET djac.provider.e.obj_id, SET djac.provider.es and HASH djac.provider.tm
         3. FACETS: Updates to ZSET djac.provider.f.key.value and HASH djac.provider.fm
@@ -1152,7 +1152,7 @@ class Autocompleter(AutocompleterBase):
         where:
         * <data> - the actual data being stored: terms, facets, score or data
         * <origin> - where the data was taken from: live means current data and db means stored in redis
-        * <data_type> - data structure used to hold the data: either map or set
+        * <data_structure> - data structure used to hold the data: either map or set
         """
 
         def _facet_list_to_set(facet_list):
@@ -1182,15 +1182,15 @@ class Autocompleter(AutocompleterBase):
             data = provider.get_data()
             data_live_map[obj_id] = data
 
-            # Mantain a mapping of each obj's score for later insertion into the sorted sets
+            # Maintain a mapping of each obj's score for later insertion into the sorted sets
             scores_live_map[obj_id] = provider._get_score()
 
-            # Mantain a mapping of each obj's norm terms
+            # Maintain a mapping of each obj's norm terms
             terms = provider.get_terms()
             norm_terms = provider.__class__._get_norm_terms(terms) or []
             terms_live_map[obj_id] = norm_terms
 
-            # Mantain a mapping of each obj's facets list of dicts
+            # Maintain a mapping of each obj's facets list of dicts
             facets_live_map[obj_id] = provider.get_facets_dict()
 
         # Build a set with the obj_ids of objects that updated their score.
@@ -1321,7 +1321,7 @@ class Autocompleter(AutocompleterBase):
         if to_remove := all_terms_in_db - all_terms_in_live_data:
             pipe.srem(exact_set_key, *to_remove)
 
-        # Updte the high-level hash map of terms in a single operation
+        # Update the high-level hash map of terms in a single operation
         if to_add := terms_live_set - terms_db_set:
             mapping = {
                 obj_id: self._serialize_data(terms_live_map[obj_id])
