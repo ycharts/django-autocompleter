@@ -65,11 +65,11 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         provider = StockAutocompleteProvider(aapl)
         provider.store()
 
-        keys = self.redis.hkeys("djac.test.stock.sc")
+        keys = self.redis.hkeys("djac.test.stock.sm")
         self.assertEqual(len(keys), 1)
 
         provider.remove()
-        keys = self.redis.hkeys("djac.test.stock.sc")
+        keys = self.redis.hkeys("djac.test.stock.sm")
         self.assertEqual(len(keys), 0)
 
     def test_dict_store_and_remove(self):

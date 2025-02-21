@@ -39,7 +39,7 @@ FACET_MAP_BASE_NAME = AUTO_BASE_NAME + ".fm"
 
 RESULT_SET_BASE_NAME = "djac.results.%s"
 
-SCORE_MAP_BASE_NAME = AUTO_BASE_NAME + ".sc"
+SCORE_MAP_BASE_NAME = AUTO_BASE_NAME + ".sm"
 
 
 class AutocompleterBase(object):
@@ -1145,7 +1145,7 @@ class Autocompleter(AutocompleterBase):
         2. EXACT TERMS: Updates to ZSET djac.provider.e.obj_id, SET djac.provider.es and HASH djac.provider.tm
         3. FACETS: Updates to ZSET djac.provider.f.key.value and HASH djac.provider.fm
         4. DATA: Updates to HASH djac.provider
-        5. SCORES: Updates to HASH djac.provider.sc
+        5. SCORES: Updates to HASH djac.provider.sm
 
         Throughout the method, the different data structures variables use the following convention:
                              <data>_<origin>_<data_structure>
