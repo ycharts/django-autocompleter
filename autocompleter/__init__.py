@@ -1,13 +1,12 @@
-VERSION = (1, 0, 6)
+VERSION = (1, 1, 0)
 
 from autocompleter.registry import registry, signal_registry
 from autocompleter.base import (
-    AutocompleterBase,
-    AutocompleterModelProvider,
-    AutocompleterDictProvider,
     Autocompleter,
+    AutocompleterBase,
+    AutocompleterDictProvider,
+    AutocompleterModelProvider,
 )
-
 from django.utils.module_loading import autodiscover_modules
 
 __all__ = [

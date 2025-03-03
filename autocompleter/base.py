@@ -1,9 +1,11 @@
+import itertools
+import json
+import logging
+import uuid
 from collections import OrderedDict
 from hashlib import sha1
+
 import redis
-import json
-import itertools
-import uuid
 
 from autocompleter import registry, settings, utils
 
@@ -38,8 +40,13 @@ FACET_MAP_BASE_NAME = AUTO_BASE_NAME + ".fm"
 
 RESULT_SET_BASE_NAME = "djac.results.%s"
 
+SCORE_MAP_BASE_NAME = AUTO_BASE_NAME + ".sm"
+
 
 class AutocompleterBase(object):
+    def __init__(self, logger=None) -> None:
+        self.log = logger if logger else logging.getLogger()
+
     @classmethod
     def _serialize_data(cls, data):
         return json.dumps(data)
@@ -48,6 +55,19 @@ class AutocompleterBase(object):
     def _deserialize_data(cls, raw):
         return json.loads(raw.decode("utf-8"))
 
+    @staticmethod
+    def _get_prefixes_set(norm_terms_list):
+        """
+        Returns the set of all prefixes from a list of norm terms.
+        A set is used in order to avoid duplications, since these are fairly common with prefixes.
+        """
+        return {
+            word[:x]
+            for norm_term in norm_terms_list
+            for word in norm_term.split(" ")
+            for x in range(1, len(word) + 1)
+        }
+
 
 class AutocompleterProviderBase(AutocompleterBase):
     # Name in redis that data for this provider will be stored. To preserve memory, keep this short.
@@ -55,7 +75,8 @@ class AutocompleterProviderBase(AutocompleterBase):
     # Cache of all aliases for this provider, including all possible variations
     _phrase_aliases = None
 
-    def __init__(self, obj):
+    def __init__(self, obj, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.obj = obj
 
     def __str__(self):
@@ -180,6 +201,14 @@ class AutocompleterProviderBase(AutocompleterBase):
         return old_facets
 
     @classmethod
+    def get_old_score(cls, obj_id):
+        score_map_name = SCORE_MAP_BASE_NAME % (cls.get_provider_name(),)
+        old_score = REDIS.hget(score_map_name, obj_id)
+        if old_score is not None:
+            old_score = cls._deserialize_data(old_score)
+        return old_score
+
+    @classmethod
     def clear_facets(cls, obj_id, old_facets):
         """
         For a given object ID, delete old facet data from Redis.
@@ -254,6 +283,20 @@ class AutocompleterProviderBase(AutocompleterBase):
         pipe.execute()
 
     @classmethod
+    def clear_score(cls, obj_id):
+        """
+        For a given object ID, delete old score from Redis.
+        """
+        provider_name = cls.get_provider_name()
+        pipe = REDIS.pipeline()
+        # Delete the mapping from obj_id -> score
+        scores_map_name = SCORE_MAP_BASE_NAME % (provider_name,)
+        pipe.hdel(scores_map_name, obj_id)
+
+        # End pipeline
+        pipe.execute()
+
+    @classmethod
     def get_facets(cls):
         """
         Facets are extra properties users can define to help further filter suggest results.
@@ -261,6 +304,21 @@ class AutocompleterProviderBase(AutocompleterBase):
         dictionary returned by get_data.
         """
         return []
+
+    def get_facets_dict(self):
+        """
+        Returns a list of facet dicts.
+
+        Each facet dict is of the form {"key": <facet-name>, "value": <facet-value>}
+        """
+        facet_dicts = []
+        data = self.get_data()
+        for facet in self.get_facets():
+            try:
+                facet_dicts.append({"key": facet, "value": data[facet]})
+            except KeyError:
+                pass
+        return facet_dicts
 
     def get_data(self):
         """
@@ -290,18 +348,15 @@ class AutocompleterProviderBase(AutocompleterBase):
         facets = self.get_facets()
 
         # Get all the facet values from the data dict
-        facet_dicts = []
-        for facet in facets:
-            try:
-                facet_dicts.append({"key": facet, "value": data[facet]})
-            except KeyError:
-                continue
+        facet_dicts = self.get_facets_dict()
 
         old_norm_terms = self.__class__.get_old_norm_terms(obj_id)
         old_facets = self.__class__.get_old_facets(obj_id)
+        old_score = self.__class__.get_old_score(obj_id)
 
         norm_terms_updated = norm_terms != old_norm_terms
         facets_updated = facets != old_facets
+        score_updated = score != old_score
 
         # Check if the terms or facets have been updated. If both weren't updated,
         # then we can just update the data payload and short circuit.
@@ -319,27 +374,24 @@ class AutocompleterProviderBase(AutocompleterBase):
                 self.__class__.clear_keys(obj_id, old_norm_terms)
             if facets_updated and old_facets is not None:
                 self.__class__.clear_facets(obj_id, old_facets)
+            if score_updated and old_score is not None:
+                self.__class__.clear_score(obj_id)
 
         # Start pipeline
         pipe = REDIS.pipeline()
 
         # Processes prefixes of object, placing object ID in sorted sets
-        for norm_term in norm_terms:
-            norm_words = norm_term.split(" ")
-            for norm_word in norm_words:
-                word_prefix = ""
-                for char in norm_word:
-                    word_prefix += char
-                    # Store prefix to obj ID mapping, with score
-                    key = PREFIX_BASE_NAME % (
-                        provider_name,
-                        word_prefix,
-                    )
-                    pipe.zadd(key, {obj_id: score})
-                    # Store autocompleter to prefix mapping so we know all prefixes
-                    # of an autocompleter
-                    key = PREFIX_SET_BASE_NAME % (provider_name,)
-                    pipe.sadd(key, word_prefix)
+        for word_prefix in self._get_prefixes_set(norm_terms):
+            # Store prefix to obj ID mapping, with score
+            key = PREFIX_BASE_NAME % (
+                provider_name,
+                word_prefix,
+            )
+            pipe.zadd(key, {obj_id: score})
+            # Store autocompleter to prefix mapping so we know all prefixes
+            # of an autocompleter
+            key = PREFIX_SET_BASE_NAME % (provider_name,)
+            pipe.sadd(key, word_prefix)
 
         # Process normalized term of object, placing object ID in a sorted set
         # representing exact matches
@@ -383,6 +435,10 @@ class AutocompleterProviderBase(AutocompleterBase):
             key = FACET_MAP_BASE_NAME % (provider_name,)
             pipe.hset(key, obj_id, self.__class__._serialize_data(facet_dicts))
 
+        # Map provider's obj_id -> score value
+        key = SCORE_MAP_BASE_NAME % (provider_name,)
+        pipe.hset(key, obj_id, score)
+
         # End pipeline
         pipe.execute()
 
@@ -399,6 +455,7 @@ class AutocompleterProviderBase(AutocompleterBase):
         facets = self.__class__.get_old_facets(obj_id)
         if facets is not None:
             self.__class__.clear_facets(obj_id, facets)
+        self.__class__.clear_score(obj_id)
 
 
 class AutocompleterModelProvider(AutocompleterProviderBase):
@@ -463,7 +520,8 @@ class Autocompleter(AutocompleterBase):
     Autocompleter class
     """
 
-    def __init__(self, name):
+    def __init__(self, name, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.name = name
 
     def store_all(self, delete_old=True):
@@ -551,6 +609,10 @@ class Autocompleter(AutocompleterBase):
 
             # Remove provider's obj_id -> norm terms mapping
             key = TERM_MAP_BASE_NAME % (provider_name,)
+            pipe.delete(key)
+
+            # Remove provider's obj_id -> score mapping
+            key = SCORE_MAP_BASE_NAME % (provider_name,)
             pipe.delete(key)
 
             # End pipeline
@@ -1071,3 +1133,316 @@ class Autocompleter(AutocompleterBase):
             return int((round(value) + (abs(value) / value) * 1))
         else:
             return int(round(value))
+
+    def update_all(self, clear_cache=True):
+        """
+        Update all modified objects within all the ac's providers
+        """
+        for provider_class in self._get_all_providers_by_autocompleter():
+            self.update_provider(provider_class)
+        if clear_cache:
+            self.clear_cache()
+
+    def update_provider(self, provider_class):
+        """
+        Update all modified objects within a provider.
+
+        Only objects or objects' properties that were added and removed are dealt with, leaving the
+        rest untouched.  Updates to an object are understood as an addition of the new value and
+        removal of the old value.
+
+        This method attempts to optimize the number of operations done on the Redis DB. The overall
+        strategy for this is to create mappings (for quick references) and sets (for quick
+        comparisons) and pre-process operations as much as possible before hitting the DB. This method
+        has 6 different parts:
+        1. PROCESS LIVE DATA: Goes through current data and processes it
+        2. PREPARE DATA STRUCTURES: Initializes the main data structures that will be used througout the method
+        3. TERMS AND PREFIXES: Updates to hash maps and sets related to exact terms and term prefixes
+        4. FACETS: Updates to ZSET djac.provider.f.key.value and HASH djac.provider.fm
+        5. DATA: Updates to HASH djac.provider
+        6. SCORES: Updates to HASH djac.provider.sm
+
+        Throughout the method, the different data structures variables use the following convention:
+                             <data>_<origin>_<data_structure>
+        where:
+        * <data> - the actual data being stored: terms, facets, score or data
+        * <origin> - where the data was taken from: live means current data and db means stored in redis
+        * <data_structure> - data structure used to hold the data: either map or set
+        """
+
+        def _facet_list_to_set(facet_list):
+            return frozenset((f["key"], f["value"]) for f in facet_list)
+
+        provider_name = provider_class.get_provider_name()
+        self.log.info(f"Start update of provider {provider_name}")
+        scores_live_map = dict()
+        facets_live_map = dict()
+        terms_live_map = dict()
+        data_live_map = dict()
+        pipe = REDIS.pipeline()
+
+        ###################
+        # PROCESS LIVE DATA
+        ###################
+        # Iterate over all objects fetching the live data
+        for obj in provider_class.get_iterator():
+            provider = provider_class(obj)
+            obj_id = str(provider.get_item_id())
+            data = provider.get_data()
+            data_live_map[obj_id] = data
+
+            # Maintain a mapping of each obj's score for later insertion into the sorted sets
+            scores_live_map[obj_id] = provider._get_score()
+
+            # Maintain a mapping of each obj's norm terms
+            terms = provider.get_terms()
+            norm_terms = provider.__class__._get_norm_terms(terms) or []
+            terms_live_map[obj_id] = norm_terms
+
+            # Maintain a mapping of each obj's facets list of dicts
+            facets_live_map[obj_id] = provider.get_facets_dict()
+
+        ##########################
+        # PREPARE DATA STRUCTURES
+        ##########################
+        terms_map_key = TERM_MAP_BASE_NAME % provider_name
+        # Fetch all terms from the DB in a single query and build a map of them with obj_id as key
+        terms_db_map = {
+            str(obj_id.decode("utf-8")): self._deserialize_data(terms)
+            for obj_id, terms in REDIS.hgetall(terms_map_key).items()
+        }
+
+        # Build the terms into sets for quick comparisons
+        terms_db_set = {
+            (obj_id, frozenset(terms)) for obj_id, terms in terms_db_map.items()
+        }
+        terms_live_set = {
+            (obj_id, frozenset(terms)) for obj_id, terms in terms_live_map.items()
+        }
+        # Build the prefixes into sets for quick comparisons
+        prefixes_db_set = {
+            (obj_id, frozenset(self._get_prefixes_set(norm_terms)))
+            for obj_id, norm_terms in terms_db_map.items()
+        }
+        prefixes_live_set = {
+            (obj_id, frozenset(self._get_prefixes_set(norm_terms)))
+            for obj_id, norm_terms in terms_live_map.items()
+        }
+        # Fetch all the facets in the DB in a single query.
+        facet_map_key = FACET_MAP_BASE_NAME % provider_name
+        facets_db_map = {
+            str(obj_id.decode("utf-8")): self._deserialize_data(facets)
+            for obj_id, facets in REDIS.hgetall(facet_map_key).items()
+        }
+
+        # Build the facets maps into sets for quick comparisons
+        facets_live_set = {
+            (obj_id, _facet_list_to_set(list_of_dicts))
+            for obj_id, list_of_dicts in facets_live_map.items()
+        }
+        facets_db_set = {
+            (obj_id, _facet_list_to_set(list_of_dicts))
+            for obj_id, list_of_dicts in facets_db_map.items()
+        }
+        # Build a set with the obj_ids of objects that updated their score.
+        # These will need to be updated in all the ZSETs
+        scores_map_key = SCORE_MAP_BASE_NAME % provider_name
+        scores_db_map = {}
+        for obj_id, score in REDIS.hgetall(scores_map_key).items():
+            # The scores that are inserted into Redis are actually 1/score. On the other hand, we
+            # have securities which have their score set to 0. When that happens, we store the score
+            # as inf, which Redis knows about and can handle, but the JSON spec does not so we get
+            # an error when trying to deserialize it.
+            # Here, we check to see if the redis stored is b"inf" and only deserialize it when it's
+            # not. If it is, we leave it as "inf" because later we convert it into float and can
+            # handle it normally
+            parsed_score = self._deserialize_data(score) if score != b"inf" else "inf"
+            obj_id = str(obj_id.decode("utf-8"))
+            scores_db_map[obj_id] = float(parsed_score)
+
+        objs_with_updated_scores = {
+            obj_id
+            for obj_id, score in scores_live_map.items()
+            if scores_db_map.get(obj_id) != score
+        }
+
+        #####################
+        # TERMS AND PREFIXES
+        #####################
+        max_word_count = registry.get_provider_setting(
+            provider, "MAX_EXACT_MATCH_WORDS"
+        )
+        objs_with_updated_terms = {
+            obj_id for obj_id, _ in terms_live_set ^ terms_db_set
+        }
+        for obj_id in objs_with_updated_terms | objs_with_updated_scores:
+            # Symmetric difference tells us which objects need to be updated but we don't know
+            # which element comes from which set, so we retrieve the terms from the terms mappings to
+            # compare them
+            live_obj_terms = frozenset(terms_live_map.get(obj_id, []))
+            db_obj_terms = frozenset(terms_db_map.get(obj_id, []))
+
+            # Terms in the live set but not in the DB are new terms
+            # But if the obj's score changed, we want to update all the terms
+            terms_to_add = (
+                live_obj_terms
+                if obj_id in objs_with_updated_scores
+                else live_obj_terms - db_obj_terms
+            )
+            for term in terms_to_add:
+                # Terms only get added if there are less than MAX_EXACT_MATCH_WORDS words
+                if len(term.split(" ")) <= max_word_count:
+                    exact_sorted_set_key = EXACT_BASE_NAME % (provider_name, term)
+                    pipe.zadd(exact_sorted_set_key, {obj_id: scores_live_map[obj_id]})
+                    self.log.info(f"Added 1 entry to {exact_sorted_set_key}")
+            # Terms in the DB but not in the live set are terms that got removed
+            for term in db_obj_terms - live_obj_terms:
+                exact_sorted_set_key = EXACT_BASE_NAME % (provider_name, term)
+                pipe.zrem(exact_sorted_set_key, obj_id)
+                self.log.info(f"Removed 1 entry from {exact_sorted_set_key}")
+
+            # Repeat the same logic for prefixes
+            live_obj_prefixes = frozenset(
+                frozenset(self._get_prefixes_set(terms_live_map.get(obj_id, [])))
+            )
+            db_obj_prefixes = frozenset(
+                frozenset(self._get_prefixes_set(terms_db_map.get(obj_id, [])))
+            )
+            # Prefixes in the live set but not in the DB are new prefixes found in its terms
+            # But if the obj's score changed, we want to update all the prefixes
+            prefixes_to_add = (
+                live_obj_prefixes
+                if obj_id in objs_with_updated_scores
+                else live_obj_prefixes - db_obj_prefixes
+            )
+            for prefix in prefixes_to_add:
+                prefix_sorted_set_key = PREFIX_BASE_NAME % (provider_name, prefix)
+                pipe.zadd(prefix_sorted_set_key, {obj_id: scores_live_map[obj_id]})
+                self.log.info(f"Added 1 entry to {prefix_sorted_set_key}")
+
+            # Prefixes in the DB but not in the live set are prefixes that got removed
+            for prefix in db_obj_prefixes - live_obj_prefixes:
+                prefix_sorted_set_key = PREFIX_BASE_NAME % (provider_name, prefix)
+                pipe.zrem(prefix_sorted_set_key, obj_id)
+                self.log.info(f"Removed 1 entry to {prefix_sorted_set_key}")
+
+        # Update exact terms sets
+        # Build a single set of all terms in each data set
+        all_terms_in_db = {x for _, term_set in terms_db_set for x in term_set}
+        all_terms_in_live_data = {x for _, term_set in terms_live_set for x in term_set}
+        exact_set_key = EXACT_SET_BASE_NAME % provider_name
+        # Update the high-level set of exact terms in the provider in two operations
+        if to_add := all_terms_in_live_data - all_terms_in_db:
+            pipe.sadd(exact_set_key, *to_add)
+            self.log.info(f"Added {len(to_add)} entries to {exact_set_key}")
+        if to_remove := all_terms_in_db - all_terms_in_live_data:
+            pipe.srem(exact_set_key, *to_remove)
+            self.log.info(f"Removed {len(to_remove)} entries from {exact_set_key}")
+
+        # Update the high-level hash map of terms in a single operation
+        if to_add := terms_live_set - terms_db_set:
+            mapping = {
+                obj_id: self._serialize_data(terms_live_map[obj_id])
+                for obj_id, _ in to_add
+            }
+            pipe.hset(terms_map_key, mapping=mapping)
+            self.log.info(f"Added {len(mapping)} entries to {terms_map_key}")
+        # Keys that are present in DB but not in the live data indicate objects
+        # that were deleted. We remove them all in one operation
+        if to_remove := set(terms_db_map.keys()) - set(terms_live_map.keys()):
+            pipe.hdel(terms_map_key, *to_remove)
+            self.log.info(f"Removed {len(to_remove)} entries from {terms_map_key}")
+
+        # Update prefixes sets
+        # Build a single set of all prefixes in each data set
+        all_prefixes_in_db = {
+            x for _, prefix_set in prefixes_db_set for x in prefix_set
+        }
+        all_prefixes_in_live_data = {
+            x for _, prefix_set in prefixes_live_set for x in prefix_set
+        }
+
+        # Do relevant updates to high-level prefix set within the provider
+        prefixes_set_key = PREFIX_SET_BASE_NAME % (provider_name,)
+        if to_remove := all_prefixes_in_db - all_prefixes_in_live_data:
+            pipe.srem(prefixes_set_key, *to_remove)
+            self.log.info(f"Removed {len(to_remove)} entries from {prefixes_set_key}")
+        if to_add := all_prefixes_in_live_data - all_prefixes_in_db:
+            pipe.sadd(prefixes_set_key, *to_add)
+            self.log.info(f"Added {len(to_remove)} entries to {prefixes_set_key}")
+
+        #########
+        # FACETS
+        #########
+
+        # Compare the two sets to get the updated objects
+        objs_with_updated_facets = {
+            obj_id for obj_id, _ in facets_live_set ^ facets_db_set
+        }
+        for obj_id in objs_with_updated_facets | objs_with_updated_scores:
+            live_obj_facets = _facet_list_to_set(facets_live_map.get(obj_id, []))
+            db_obj_facets = _facet_list_to_set(facets_db_map.get(obj_id, []))
+
+            facets_to_add = (
+                live_obj_facets
+                if obj_id in objs_with_updated_scores
+                else live_obj_facets - db_obj_facets
+            )
+            for key, value in facets_to_add:
+                facet_sorted_set_key = FACET_SET_BASE_NAME % (provider_name, key, value)
+                pipe.zadd(facet_sorted_set_key, {obj_id: scores_live_map[obj_id]})
+                self.log.info(f"Added 1 entry to {facet_sorted_set_key}")
+            for key, value in db_obj_facets - live_obj_facets:
+                facet_sorted_set_key = FACET_SET_BASE_NAME % (provider_name, key, value)
+                pipe.zrem(facet_sorted_set_key, obj_id)
+                self.log.info(f"Removed 1 entry to {facet_sorted_set_key}")
+
+        # Bulk update the facets hash map with all needed facets in a single operation
+        if facets_with_updates := facets_live_set - facets_db_set:
+            mapping = {
+                obj_id: self._serialize_data(facets_live_map[obj_id])
+                for obj_id, _ in facets_with_updates
+            }
+            pipe.hset(facet_map_key, mapping=mapping)
+            self.log.info(f"Added {len(mapping)} entries to {facet_map_key}")
+
+        # Keys that are present in DB but not in the live data indicate objects
+        # that were deleted. We remove them all in one operation
+        if obj_deleted := set(facets_db_map.keys()) - set(facets_live_map.keys()):
+            pipe.hdel(facet_map_key, *obj_deleted)
+            self.log.info(f"Removed {len(obj_deleted)} entries from {facet_map_key}")
+
+        #######
+        # DATA
+        #######
+        data_map_key = AUTO_BASE_NAME % provider_name
+        data_db_map = {
+            str(obj_id.decode("utf-8")): self._deserialize_data(data)
+            for obj_id, data in REDIS.hgetall(data_map_key).items()
+        }
+        data_updated = {
+            obj_id: self._serialize_data(data)
+            for obj_id, data in data_live_map.items()
+            if data != data_db_map.get(obj_id, {})
+        }
+        if data_updated:
+            pipe.hset(data_map_key, mapping=data_updated)
+            self.log.info(f"Added {len(data_updated)} entries to {data_map_key}")
+        if objs_removed := set(data_db_map.keys()) - set(data_live_map.keys()):
+            pipe.hdel(data_map_key, *objs_removed)
+            self.log.info(f"Removed {len(objs_removed)} entries from {data_map_key}")
+
+        #########
+        # SCORES
+        #########
+        if updated_scores := {
+            obj_id: scores_live_map[obj_id] for obj_id in objs_with_updated_scores
+        }:
+            pipe.hset(scores_map_key, mapping=updated_scores)
+            self.log.info(f"Added {len(updated_scores)} entries to {updated_scores}")
+        if objs_removed := set(scores_db_map.keys()) - set(scores_live_map.keys()):
+            pipe.hdel(scores_map_key, *objs_removed)
+            self.log.info(f"Removed {len(objs_removed)} entries from {objs_removed}")
+        # Execute all the additions and deletions in a single connection
+        pipe.execute()
+        self.log.info(f"End update of provider {provider_name}")

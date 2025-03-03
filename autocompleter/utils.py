@@ -1,7 +1,7 @@
 import copy
+import itertools
 import re
 import unicodedata
-import itertools
 
 from autocompleter import settings
 
@@ -42,7 +42,7 @@ def get_normalized_term(term, replaced_chars=[]):
 
 def get_norm_term_variations(term):
     """
-    Get variations of a term in formalized form
+    Get variations of a term in normalized form
     """
     norm_terms = []
     # create list of what join chars we care about that are in the term
