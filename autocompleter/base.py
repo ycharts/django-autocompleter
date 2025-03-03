@@ -1,5 +1,6 @@
 import itertools
 import json
+import logging
 import uuid
 from collections import OrderedDict
 from hashlib import sha1
@@ -43,6 +44,9 @@ SCORE_MAP_BASE_NAME = AUTO_BASE_NAME + ".sm"
 
 
 class AutocompleterBase(object):
+    def __init__(self, logger=None) -> None:
+        self.log = logger if logger else logging.getLogger()
+
     @classmethod
     def _serialize_data(cls, data):
         return json.dumps(data)
@@ -71,7 +75,8 @@ class AutocompleterProviderBase(AutocompleterBase):
     # Cache of all aliases for this provider, including all possible variations
     _phrase_aliases = None
 
-    def __init__(self, obj):
+    def __init__(self, obj, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.obj = obj
 
     def __str__(self):
@@ -515,7 +520,8 @@ class Autocompleter(AutocompleterBase):
     Autocompleter class
     """
 
-    def __init__(self, name):
+    def __init__(self, name, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.name = name
 
     def store_all(self, delete_old=True):
@@ -1168,6 +1174,7 @@ class Autocompleter(AutocompleterBase):
             return frozenset((f["key"], f["value"]) for f in facet_list)
 
         provider_name = provider_class.get_provider_name()
+        self.log.info(f"Start update of provider {provider_name}")
         scores_live_map = dict()
         facets_live_map = dict()
         terms_live_map = dict()
@@ -1287,10 +1294,12 @@ class Autocompleter(AutocompleterBase):
                 if len(term.split(" ")) <= max_word_count:
                     exact_sorted_set_key = EXACT_BASE_NAME % (provider_name, term)
                     pipe.zadd(exact_sorted_set_key, {obj_id: scores_live_map[obj_id]})
+                    self.log.info(f"Added 1 entry to {exact_sorted_set_key}")
             # Terms in the DB but not in the live set are terms that got removed
             for term in db_obj_terms - live_obj_terms:
                 exact_sorted_set_key = EXACT_BASE_NAME % (provider_name, term)
                 pipe.zrem(exact_sorted_set_key, obj_id)
+                self.log.info(f"Removed 1 entry from {exact_sorted_set_key}")
 
             # Repeat the same logic for prefixes
             live_obj_prefixes = frozenset(
@@ -1309,11 +1318,13 @@ class Autocompleter(AutocompleterBase):
             for prefix in prefixes_to_add:
                 prefix_sorted_set_key = PREFIX_BASE_NAME % (provider_name, prefix)
                 pipe.zadd(prefix_sorted_set_key, {obj_id: scores_live_map[obj_id]})
+                self.log.info(f"Added 1 entry to {prefix_sorted_set_key}")
 
             # Prefixes in the DB but not in the live set are prefixes that got removed
             for prefix in db_obj_prefixes - live_obj_prefixes:
                 prefix_sorted_set_key = PREFIX_BASE_NAME % (provider_name, prefix)
                 pipe.zrem(prefix_sorted_set_key, obj_id)
+                self.log.info(f"Removed 1 entry to {prefix_sorted_set_key}")
 
         # Update exact terms sets
         # Build a single set of all terms in each data set
@@ -1323,8 +1334,10 @@ class Autocompleter(AutocompleterBase):
         # Update the high-level set of exact terms in the provider in two operations
         if to_add := all_terms_in_live_data - all_terms_in_db:
             pipe.sadd(exact_set_key, *to_add)
+            self.log.info(f"Added {len(to_add)} entries to {exact_set_key}")
         if to_remove := all_terms_in_db - all_terms_in_live_data:
             pipe.srem(exact_set_key, *to_remove)
+            self.log.info(f"Removed {len(to_remove)} entries from {exact_set_key}")
 
         # Update the high-level hash map of terms in a single operation
         if to_add := terms_live_set - terms_db_set:
@@ -1333,10 +1346,12 @@ class Autocompleter(AutocompleterBase):
                 for obj_id, _ in to_add
             }
             pipe.hset(terms_map_key, mapping=mapping)
+            self.log.info(f"Added {len(mapping)} entries to {terms_map_key}")
         # Keys that are present in DB but not in the live data indicate objects
         # that were deleted. We remove them all in one operation
         if to_remove := set(terms_db_map.keys()) - set(terms_live_map.keys()):
             pipe.hdel(terms_map_key, *to_remove)
+            self.log.info(f"Removed {len(to_remove)} entries from {terms_map_key}")
 
         # Update prefixes sets
         # Build a single set of all prefixes in each data set
@@ -1351,8 +1366,10 @@ class Autocompleter(AutocompleterBase):
         prefixes_set_key = PREFIX_SET_BASE_NAME % (provider_name,)
         if to_remove := all_prefixes_in_db - all_prefixes_in_live_data:
             pipe.srem(prefixes_set_key, *to_remove)
+            self.log.info(f"Removed {len(to_remove)} entries from {prefixes_set_key}")
         if to_add := all_prefixes_in_live_data - all_prefixes_in_db:
             pipe.sadd(prefixes_set_key, *to_add)
+            self.log.info(f"Added {len(to_remove)} entries to {prefixes_set_key}")
 
         #########
         # FACETS
@@ -1374,9 +1391,11 @@ class Autocompleter(AutocompleterBase):
             for key, value in facets_to_add:
                 facet_sorted_set_key = FACET_SET_BASE_NAME % (provider_name, key, value)
                 pipe.zadd(facet_sorted_set_key, {obj_id: scores_live_map[obj_id]})
+                self.log.info(f"Added 1 entry to {facet_sorted_set_key}")
             for key, value in db_obj_facets - live_obj_facets:
                 facet_sorted_set_key = FACET_SET_BASE_NAME % (provider_name, key, value)
                 pipe.zrem(facet_sorted_set_key, obj_id)
+                self.log.info(f"Removed 1 entry to {facet_sorted_set_key}")
 
         # Bulk update the facets hash map with all needed facets in a single operation
         if facets_with_updates := facets_live_set - facets_db_set:
@@ -1385,11 +1404,13 @@ class Autocompleter(AutocompleterBase):
                 for obj_id, _ in facets_with_updates
             }
             pipe.hset(facet_map_key, mapping=mapping)
+            self.log.info(f"Added {len(mapping)} entries to {facet_map_key}")
 
         # Keys that are present in DB but not in the live data indicate objects
         # that were deleted. We remove them all in one operation
         if obj_deleted := set(facets_db_map.keys()) - set(facets_live_map.keys()):
             pipe.hdel(facet_map_key, *obj_deleted)
+            self.log.info(f"Removed {len(obj_deleted)} entries from {facet_map_key}")
 
         #######
         # DATA
@@ -1406,8 +1427,10 @@ class Autocompleter(AutocompleterBase):
         }
         if data_updated:
             pipe.hset(data_map_key, mapping=data_updated)
+            self.log.info(f"Added {len(data_updated)} entries to {data_map_key}")
         if objs_removed := set(data_db_map.keys()) - set(data_live_map.keys()):
             pipe.hdel(data_map_key, *objs_removed)
+            self.log.info(f"Removed {len(objs_removed)} entries from {data_map_key}")
 
         #########
         # SCORES
@@ -1416,7 +1439,10 @@ class Autocompleter(AutocompleterBase):
             obj_id: scores_live_map[obj_id] for obj_id in objs_with_updated_scores
         }:
             pipe.hset(scores_map_key, mapping=updated_scores)
+            self.log.info(f"Added {len(updated_scores)} entries to {updated_scores}")
         if objs_removed := set(scores_db_map.keys()) - set(scores_live_map.keys()):
             pipe.hdel(scores_map_key, *objs_removed)
+            self.log.info(f"Removed {len(objs_removed)} entries from {objs_removed}")
         # Execute all the additions and deletions in a single connection
         pipe.execute()
+        self.log.info(f"End update of provider {provider_name}")
