@@ -53,7 +53,14 @@ class AutocompleterBase(object):
 
     @classmethod
     def _deserialize_data(cls, raw):
-        return json.loads(raw.decode("utf-8"))
+        # The scores that are inserted into Redis are actually 1/score. On the other hand, we
+        # have securities which have their score set to 0. When that happens, we store the score
+        # as inf, which Redis knows about and can handle, but the JSON spec does not so we get
+        # an error when trying to deserialize it.
+        # Here, we check to see if the redis stored value is b"inf" and only deserialize it when it's
+        # not. If it is, we leave it as "inf"
+
+        return json.loads(raw.decode("utf-8")) if raw != b"inf" else "inf"
 
     @staticmethod
     def _get_prefixes_set(norm_terms_list):
@@ -1249,14 +1256,7 @@ class Autocompleter(AutocompleterBase):
         scores_map_key = SCORE_MAP_BASE_NAME % provider_name
         scores_db_map = {}
         for obj_id, score in REDIS.hgetall(scores_map_key).items():
-            # The scores that are inserted into Redis are actually 1/score. On the other hand, we
-            # have securities which have their score set to 0. When that happens, we store the score
-            # as inf, which Redis knows about and can handle, but the JSON spec does not so we get
-            # an error when trying to deserialize it.
-            # Here, we check to see if the redis stored is b"inf" and only deserialize it when it's
-            # not. If it is, we leave it as "inf" because later we convert it into float and can
-            # handle it normally
-            parsed_score = self._deserialize_data(score) if score != b"inf" else "inf"
+            parsed_score = self._deserialize_data(score)
             obj_id = str(obj_id.decode("utf-8"))
             scores_db_map[obj_id] = float(parsed_score)
 
