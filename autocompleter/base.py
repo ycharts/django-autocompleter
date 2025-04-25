@@ -1146,6 +1146,7 @@ class Autocompleter(AutocompleterBase):
         Update all modified objects within all the ac's providers
         """
         if not (provider_classes := self._get_all_providers_by_autocompleter()):
+            self.log.warning(f"No providers for AC {self.name}. Skipping...")
             return
         for provider_class in provider_classes:
             self.update_provider(provider_class)
