@@ -1145,7 +1145,9 @@ class Autocompleter(AutocompleterBase):
         """
         Update all modified objects within all the ac's providers
         """
-        for provider_class in self._get_all_providers_by_autocompleter():
+        if not (provider_classes := self._get_all_providers_by_autocompleter()):
+            return
+        for provider_class in provider_classes:
             self.update_provider(provider_class)
         if clear_cache:
             self.clear_cache()
