@@ -3,8 +3,33 @@
 [![Test Suite](https://github.com/ycharts/django-autocompleter/actions/workflows/main.yml/badge.svg?branch=master)](https://github.com/ycharts/django-autocompleter/actions/workflows/main.yml)
 [![Coverage Status](https://coveralls.io/repos/github/ycharts/django-autocompleter/badge.svg?branch=master)](https://coveralls.io/github/ycharts/django-autocompleter?branch=master)
 
+## Overview
+
 django-redis-autocompleter is a redis-backed autocompleter for Django. It provides, fast, seamless autocompletion for
 Django models with a minimum of effort.
+
+## Running Tests
+
+1. Create and activate a new Python virtual environment using the package manager of your choice (e.g., `pyenv-virtualenv`, `virtualenv`, etc.).
+
+2. Install requirements. 
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+   
+3. Install the `django_cache_helper` package in editable mode
+
+    ```bash
+    pip install -e .
+    ```
+   
+4. Run tests using `manage.py`: 
+
+    ```bash
+    cd test_project
+    python manage.py test
+    ```
 
 ## Contributors ✨
 

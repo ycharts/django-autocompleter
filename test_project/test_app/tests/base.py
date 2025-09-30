@@ -1,4 +1,4 @@
-import redis
+import valkey as redis
 from django.conf import settings
 from django.core import management
 from django.test import TestCase

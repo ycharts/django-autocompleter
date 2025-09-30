@@ -5,7 +5,7 @@ import uuid
 from collections import OrderedDict
 from hashlib import sha1
 
-import redis
+import valkey as redis
 
 from autocompleter import registry, settings, utils
 
