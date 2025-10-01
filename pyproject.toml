@@ -24,7 +24,7 @@ classifiers = [
 ]
 dependencies = [
     "Django >=3.2.0, <6.0",
-    "valkey[libvalkey] == 6.1.1",
+    "valkey[libvalkey] == 6.0.2",
 ]
 dynamic = ["version"]
 
