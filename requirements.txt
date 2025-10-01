@@ -1,4 +1,3 @@
 # Core packages needed
 Django>=3.2, <6.0
-hiredis>=1.0
-valkey==6.0.2
+valkey[libvalkey]==6.1.1
