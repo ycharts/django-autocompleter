@@ -493,7 +493,6 @@ class FacetMatchingTestCase(AutocompleterTestCase):
                 ],
             }
         ]
-
         # we expect that adding facets to a suggest call with no results will not
         # add any results
         facet_matches = self.autocomp.suggest(

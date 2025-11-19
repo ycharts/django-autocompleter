@@ -283,6 +283,7 @@ class FacetedStoringAndRemovingTestCase(AutocompleterTestCase):
         # the FacetedStockAutocompleteProvider get_facets is set to ['sector', 'industry']
         facet_set_name = base.FACET_SET_BASE_NAME % (
             provider_name,
+            "{p}",
             "sector",
             "Technology",
         )
@@ -291,6 +292,7 @@ class FacetedStoringAndRemovingTestCase(AutocompleterTestCase):
 
         facet_set_name = base.FACET_SET_BASE_NAME % (
             provider_name,
+            "{p}",
             "industry",
             "Consumer Electronics",
         )
@@ -321,6 +323,7 @@ class FacetedStoringAndRemovingTestCase(AutocompleterTestCase):
         # the FacetedStockAutocompleteProvider get_facets is set to ['sector']
         facet_set_name = base.FACET_SET_BASE_NAME % (
             provider_name,
+            "{p}",
             "sector",
             "Technology",
         )
@@ -347,6 +350,7 @@ class FacetedStoringAndRemovingTestCase(AutocompleterTestCase):
         self.assertEqual(set_length, 0)
         facet_set_name = base.FACET_SET_BASE_NAME % (
             provider_name,
+            "{p}",
             "sector",
             "Healthcare",
         )
@@ -377,6 +381,7 @@ class FacetedStoringAndRemovingTestCase(AutocompleterTestCase):
         # the FacetedStockAutocompleteProvider get_facets is set to ['sector']
         facet_set_name = base.FACET_SET_BASE_NAME % (
             provider_name,
+            "{p}",
             "sector",
             "Technology",
         )
@@ -398,6 +403,7 @@ class FacetedStoringAndRemovingTestCase(AutocompleterTestCase):
 
         facet_set_name = base.FACET_SET_BASE_NAME % (
             "faceted_stock",
+            "{p}",
             "sector",
             "Technology",
         )
@@ -427,6 +433,7 @@ class FacetedStoringAndRemovingTestCase(AutocompleterTestCase):
         autocomp.store_all()
         facet_set_name = base.FACET_SET_BASE_NAME % (
             "faceted_stock",
+            "{p}",
             "sector",
             "Technology",
         )
@@ -441,10 +448,12 @@ class FacetedStoringAndRemovingTestCase(AutocompleterTestCase):
         """
         Calling remove_all clears all facet data
         """
+        # TODO: update with new '{e}' facet set as well
         autocomp = Autocompleter("faceted_stock")
         autocomp.store_all()
         facet_set_name = base.FACET_SET_BASE_NAME % (
             "faceted_stock",
+            "{p}",
             "sector",
             "Technology",
         )
@@ -679,24 +688,24 @@ class UpdateTestCase(AutocompleterTestCase):
             autocomp.update_all(clear_cache=False)
 
         provider_name = FacetedStockAutocompleteProvider.get_provider_name()
-        facet_set_key = base.FACET_SET_BASE_NAME % (provider_name, "{}", "{}")
+
         # AAPL is in djac.test.faceted_stock.sector.Food
         self.assertIsNotNone(
-            self.redis.zscore(facet_set_key.format("sector", "Food"), aapl.id)
+            self.redis.zscore(base.FACET_SET_BASE_NAME % (provider_name, "{p}", "sector", "Food"), aapl.id)
         )
         # AAPL is in djac.test.faceted_stock.search_symbol.AAPL
         self.assertIsNotNone(
-            self.redis.zscore(facet_set_key.format("search_name", "AAPL"), aapl.id)
+            self.redis.zscore(base.FACET_SET_BASE_NAME % (provider_name, "{p}", "search_name", "AAPL"), aapl.id)
         )
 
         # AAPL is no longer in djac.test.faceted_stock.sector.Technology
         self.assertIsNone(
-            self.redis.zscore(facet_set_key.format("sector", "Technology"), aapl.id)
+            self.redis.zscore(base.FACET_SET_BASE_NAME % (provider_name, "{p}", "sector", "Technology"), aapl.id)
         )
         # AAPL is no longer in djac.test.faceted_stock.industry.Consumer Electronics
         self.assertIsNone(
             self.redis.zscore(
-                facet_set_key.format("industry", "Consumer Electronics"), aapl.id
+                base.FACET_SET_BASE_NAME % (provider_name, "{p}", "industry", "Consumer Electronics"), aapl.id
             )
         )
         facet_map_key = base.FACET_MAP_BASE_NAME % (provider_name,)
@@ -829,7 +838,10 @@ class UpdateTestCase(AutocompleterTestCase):
 
         exact_map_key = base.EXACT_SET_BASE_NAME % provider_name
         # Verify that exact terms are no longer present
-        self.assertFalse(any(self.redis.smismember(exact_map_key, *terms)))
+
+        for term in terms:
+            self.assertFalse(self.redis.sismember(exact_map_key, term))
+
         for term in terms:
             key = base.EXACT_BASE_NAME % (provider_name, term)
             self.assertIsNone(self.redis.zscore(key, obj_id))
@@ -838,7 +850,8 @@ class UpdateTestCase(AutocompleterTestCase):
         prefixes = {"apple"[:x] for x in range(2, len("apple") + 1)}
         prefixes_map_key = base.PREFIX_SET_BASE_NAME % provider_name
         # Verify that no prefixes are present
-        self.assertFalse(any(self.redis.smismember(prefixes_map_key, *prefixes)))
+        for prefix in prefixes:
+            self.assertFalse(self.redis.sismember(prefixes_map_key, prefix))
         for prefix in prefixes:
             key = base.PREFIX_BASE_NAME % (provider_name, prefix)
             self.assertIsNone(self.redis.zscore(key, obj_id))
@@ -849,6 +862,7 @@ class UpdateTestCase(AutocompleterTestCase):
         for facet in facets:
             key = base.FACET_SET_BASE_NAME % (
                 provider_name,
+                "{p}",
                 facet["key"],
                 facet["value"],
             )
@@ -903,6 +917,7 @@ class UpdateTestCase(AutocompleterTestCase):
         for facet in facets:
             key = base.FACET_SET_BASE_NAME % (
                 provider_name,
+                "{p}",
                 facet["key"],
                 facet["value"],
             )

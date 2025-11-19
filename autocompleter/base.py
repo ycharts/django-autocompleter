@@ -9,36 +9,39 @@ import redis
 
 from autocompleter import registry, settings, utils
 
-REDIS = redis.Redis(
+CLUSTER_MODE = settings.REDIS_CLUSTER_MODE
+if CLUSTER_MODE:
+    from redis.cluster import RedisCluster as Redis
+else:
+    from redis import Redis
+
+REDIS = Redis(
     host=settings.REDIS_CONNECTION["host"],
     port=settings.REDIS_CONNECTION["port"],
-    db=settings.REDIS_CONNECTION["db"],
 )
 
 if settings.TEST_DATA:
     AUTO_BASE_NAME = "djac.test.%s"
-    RESULT_SET_BASE_NAME = "djac.test.results.%s"
+    RESULT_SET_BASE_NAME = "djac.test.res.%s.%s"
 
 else:
     AUTO_BASE_NAME = "djac.%s"
-    RESULT_SET_BASE_NAME = "djac.results.%s"
+    RESULT_SET_BASE_NAME = "djac.res.%s.%s"
 
-CACHE_BASE_NAME = AUTO_BASE_NAME + ".c.%s.%s"
+CACHE_BASE_NAME = AUTO_BASE_NAME + ".c.{%s}.%s"
 EXACT_CACHE_BASE_NAME = AUTO_BASE_NAME + ".ce.%s"
 
-PREFIX_BASE_NAME = AUTO_BASE_NAME + ".p.%s"
+PREFIX_BASE_NAME = AUTO_BASE_NAME + ".{p}.%s"
 PREFIX_SET_BASE_NAME = AUTO_BASE_NAME + ".ps"
 
-EXACT_BASE_NAME = AUTO_BASE_NAME + ".e.%s"
+EXACT_BASE_NAME = AUTO_BASE_NAME + ".{e}.%s"
 EXACT_SET_BASE_NAME = AUTO_BASE_NAME + ".es"
 
 TERM_MAP_BASE_NAME = AUTO_BASE_NAME + ".tm"
 
-FACET_BASE_NAME = AUTO_BASE_NAME + ".f"
+FACET_BASE_NAME = AUTO_BASE_NAME + ".%s.f"
 FACET_SET_BASE_NAME = FACET_BASE_NAME + ".%s.%s"
 FACET_MAP_BASE_NAME = AUTO_BASE_NAME + ".fm"
-
-RESULT_SET_BASE_NAME = "djac.results.%s"
 
 SCORE_MAP_BASE_NAME = AUTO_BASE_NAME + ".sm"
 
@@ -224,17 +227,19 @@ class AutocompleterProviderBase(AutocompleterBase):
         pipe = REDIS.pipeline()
         # Remove old facets from the corresponding facet sorted set containing scores
         for facet in old_facets:
-            try:
-                facet_name = facet["key"]
-                facet_value = facet["value"]
-                facet_set_name = FACET_SET_BASE_NAME % (
-                    provider_name,
-                    facet_name,
-                    facet_value,
-                )
-                pipe.zrem(facet_set_name, obj_id)
-            except KeyError:
-                continue
+            for hash_set in ['{p}', '{e}']:
+                try:
+                    facet_name = facet["key"]
+                    facet_value = facet["value"]
+                    facet_set_name = FACET_SET_BASE_NAME % (
+                        provider_name,
+                        hash_set,
+                        facet_name,
+                        facet_value,
+                    )
+                    pipe.zrem(facet_set_name, obj_id)
+                except KeyError:
+                    continue
         # Now delete the mapping from obj_id -> facets
         facet_map_name = FACET_MAP_BASE_NAME % (provider_name,)
         pipe.hdel(facet_map_name, obj_id)
@@ -422,12 +427,20 @@ class AutocompleterProviderBase(AutocompleterBase):
                 pipe.sadd(key, norm_term)
 
         for facet in facet_dicts:
-            key = FACET_SET_BASE_NAME % (
+            prefix_key = FACET_SET_BASE_NAME % (
                 provider_name,
+                '{p}',
                 facet["key"],
                 facet["value"],
             )
-            pipe.zadd(key, {obj_id: score})
+            exact_key = FACET_SET_BASE_NAME % (
+                provider_name,
+                '{e}',
+                facet["key"],
+                facet["value"],
+            )
+            pipe.zadd(prefix_key, {obj_id: score})
+            pipe.zadd(exact_key, {obj_id: score})
 
         # Map provider's obj_id -> data payload
         key = AUTO_BASE_NAME % (provider_name,)
@@ -463,6 +476,9 @@ class AutocompleterProviderBase(AutocompleterBase):
         if facets is not None:
             self.__class__.clear_facets(obj_id, facets)
         self.__class__.clear_score(obj_id)
+
+    def get_item_id(self):
+        pass
 
 
 class AutocompleterModelProvider(AutocompleterProviderBase):
@@ -584,28 +600,29 @@ class Autocompleter(AutocompleterBase):
             chunked_norm_term_keys = self.chunk_list(keys, 100)
 
             # Get list of facets
-            facet_base = FACET_BASE_NAME % (provider_name,)
-            keys = [facet.decode() for facet in REDIS.keys(facet_base + ".*")]
-            facet_keys = self.chunk_list(keys, 100)
+            facet_keys = []
+            for hash_set in ['{p}', '{e}']:
+                facet_base = FACET_BASE_NAME % (provider_name, hash_set)
+                keys = [facet.decode() for facet in REDIS.keys(facet_base + ".*")]
+                facet_keys.extend(keys)
+            facet_keys = self.chunk_list(facet_keys, 100)
 
             # Start pipeline
             pipe = REDIS.pipeline()
 
             # For each prefix, delete sorted set (in groups of 100)
-            for chunk in chunked_prefix_keys:
-                pipe.delete(*chunk)
+            self._handle_chunk_deletion(pipe, chunked_prefix_keys)
             # Delete the set of prefixes
             pipe.delete(prefix_set_name)
 
             # For each exact match term, delete sorted set (in groups of 100
-            for chunk in chunked_norm_term_keys:
-                pipe.delete(*chunk)
+            self._handle_chunk_deletion(pipe, chunked_norm_term_keys)
             # Delete the set of exact matches
             pipe.delete(exact_set_name)
 
             # For each facet, delete sorted set (in groups of 100)
-            for chunk in facet_keys:
-                pipe.delete(*chunk)
+            self._handle_chunk_deletion(pipe, facet_keys)
+
             # Delete the facet mapping
             facet_map_name = FACET_MAP_BASE_NAME % (provider_name,)
             pipe.delete(facet_map_name)
@@ -661,12 +678,15 @@ class Autocompleter(AutocompleterBase):
 
         keys = REDIS.keys(cache_key) + REDIS.keys(exact_cache_key)
         if len(keys) > 0:
-            REDIS.delete(*keys)
+            self._handle_iterable_deletion(REDIS, keys)
 
-    def suggest(self, term, facets=[]):
+    def suggest(self, term, facets=None):
         """
         Suggest matching objects, given a term
         """
+        if facets is None:
+            facets = []
+
         providers = self._get_all_providers_by_autocompleter()
         if providers is None:
             return []
@@ -691,11 +711,11 @@ class Autocompleter(AutocompleterBase):
 
         # Generate a unique identifier to be used for storing intermediate results. This is to
         # prevent redis key collisions between competing suggest / exact_suggest calls.
-        base_result_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
-        base_exact_match_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
-        # Same idea as the base_result_key, but for when we are using facets in the suggest call.
-        facet_final_result_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
-        facet_final_exact_match_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
+        base_result_key = RESULT_SET_BASE_NAME % ("{p}", str(uuid.uuid4()))
+        base_exact_match_key = RESULT_SET_BASE_NAME % ("{e}", str(uuid.uuid4()))
+        # Same idea as the final_result_key, but for when we are using facets in the suggest call.
+        facet_final_result_key = RESULT_SET_BASE_NAME % ("{p}", str(uuid.uuid4()))
+        facet_final_exact_match_key = RESULT_SET_BASE_NAME % ("{e}", str(uuid.uuid4()))
         # As we search, we may store a number of intermediate data items. We keep track of
         # what we store and delete so there is nothing left over
         # We initialize with the base keys all of which could end up being used.
@@ -762,37 +782,55 @@ class Autocompleter(AutocompleterBase):
                 provider_keys_set = set(provider.get_facets())
                 if facet_keys_set.issubset(provider_keys_set):
                     use_facets = True
-
+            facet_result_keys = []
+            facet_exact_set_keys = []
             if use_facets:
-                facet_result_keys = []
                 for facet in facets:
                     try:
                         facet_type = facet["type"]
                         if facet_type not in ["and", "or"]:
                             continue
                         facet_list = facet["facets"]
-                        facet_set_keys = []
+                        current_facet_prefix_keys = []
+                        current_facet_exact_keys = []
                         for facet_dict in facet_list:
-                            facet_set_key = FACET_SET_BASE_NAME % (
+                            facet_set_prefix_key = FACET_SET_BASE_NAME % (
                                 provider_name,
+                                '{p}',
                                 facet_dict["key"],
                                 facet_dict["value"],
                             )
-                            facet_set_keys.append(facet_set_key)
-
-                        if len(facet_set_keys) == 1:
-                            facet_result_keys.append(facet_set_keys[0])
+                            facet_set_exact_key = FACET_SET_BASE_NAME % (
+                                provider_name,
+                                '{e}',
+                                facet_dict["key"],
+                                facet_dict["value"],
+                            )
+                            current_facet_prefix_keys.append(facet_set_prefix_key)
+                            current_facet_exact_keys.append(facet_set_exact_key)
+                        if len(current_facet_prefix_keys) == 1:
+                            facet_result_keys.append(current_facet_prefix_keys[0])
+                            facet_exact_set_keys.append(current_facet_exact_keys[0])
                         else:
-                            facet_result_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
+                            facet_result_key = RESULT_SET_BASE_NAME % ("{p}", str(uuid.uuid4()))
+                            facet_exact_key = RESULT_SET_BASE_NAME % ("{e}", str(uuid.uuid4()))
                             facet_result_keys.append(facet_result_key)
+                            facet_exact_set_keys.append(facet_exact_key)
                             keys_to_delete.add(facet_result_key)
+                            keys_to_delete.add(facet_exact_key)
                             if facet_type == "and":
                                 pipe.zinterstore(
-                                    facet_result_key, facet_set_keys, aggregate="MIN"
+                                    facet_result_key, current_facet_prefix_keys, aggregate="MIN"
+                                )
+                                pipe.zinterstore(
+                                    facet_exact_key, current_facet_exact_keys, aggregate="MIN"
                                 )
                             else:
                                 pipe.zunionstore(
-                                    facet_result_key, facet_set_keys, aggregate="MIN"
+                                    facet_result_key, current_facet_prefix_keys, aggregate="MIN"
+                                )
+                                pipe.zunionstore(
+                                    facet_exact_key, current_facet_exact_keys, aggregate="MIN"
                                 )
                     except KeyError:
                         continue
@@ -839,17 +877,16 @@ class Autocompleter(AutocompleterBase):
                 if use_facets:
                     pipe.zinterstore(
                         facet_final_exact_match_key,
-                        facet_result_keys + [final_exact_match_key],
+                        facet_exact_set_keys + [final_exact_match_key],
                         aggregate="MIN",
                     )
                     pipe.zrange(facet_final_exact_match_key, 0, MAX_RESULTS - 1)
                 else:
                     pipe.zrange(final_exact_match_key, 0, MAX_RESULTS - 1)
 
-        pipe.delete(*keys_to_delete)
+        self._handle_iterable_deletion(pipe, keys_to_delete)
 
         results = [i for i in pipe.execute() if type(i) == list]
-
         # Total number of results currently allocated to providers
         total_allocated_results = 0
         # Maximum number of results allowed per provider
@@ -911,7 +948,7 @@ class Autocompleter(AutocompleterBase):
                 # are inserted in front of list.
                 exact_ids.reverse()
 
-                # Merge exact IDs with non-exact IDs, puttting exacts IDs in front and removing
+                # Merge exact IDs with non-exact IDs, putting exacts IDs in front and removing
                 # from regular ID list if necessary
                 for j in exact_ids:
                     if j in ids:
@@ -1001,7 +1038,7 @@ class Autocompleter(AutocompleterBase):
         # Generate a unique identifier to be used for storing intermediate results. This is to
         # prevent redis key collisions between competing suggest / exact_suggest calls.
         uuid_str = str(uuid.uuid4())
-        intermediate_result_key = RESULT_SET_BASE_NAME % (uuid_str,)
+        intermediate_result_key = RESULT_SET_BASE_NAME % ("{e}", uuid_str,)
 
         MAX_RESULTS = registry.get_autocompleter_setting(self.name, "MAX_RESULTS")
 
@@ -1398,12 +1435,12 @@ class Autocompleter(AutocompleterBase):
                 else live_obj_facets - db_obj_facets
             )
             for key, value in facets_to_add:
-                facet_sorted_set_key = FACET_SET_BASE_NAME % (provider_name, key, value)
+                facet_sorted_set_key = FACET_SET_BASE_NAME % (provider_name, '{p}', key, value)
                 pipe.zadd(facet_sorted_set_key, {obj_id: scores_live_map[obj_id]})
             self.log.info(f"Added {len(facets_to_add)} entries to {FACET_BASE_NAME}")
             facets_to_remove = db_obj_facets - live_obj_facets
             for key, value in facets_to_remove:
-                facet_sorted_set_key = FACET_SET_BASE_NAME % (provider_name, key, value)
+                facet_sorted_set_key = FACET_SET_BASE_NAME % (provider_name, '{p}', key, value)
                 pipe.zrem(facet_sorted_set_key, obj_id)
             self.log.info(
                 f"Removed {len(facets_to_remove)} entries to {FACET_SET_BASE_NAME}"
@@ -1458,3 +1495,16 @@ class Autocompleter(AutocompleterBase):
         # Execute all the additions and deletions in a single connection
         pipe.execute()
         self.log.info(f"End update of provider {provider_name}")
+
+    @staticmethod
+    def _handle_iterable_deletion(client: redis.client | redis.cluster.ClusterPipeline, keys):
+        if CLUSTER_MODE:
+            for key in keys:
+                client.delete(key)
+        else:
+            client.delete(*keys)
+
+    @classmethod
+    def _handle_chunk_deletion(cls, client: redis.client | redis.cluster.ClusterPipeline, chunked_keys: list[list[str]]):
+        for chunk in chunked_keys:
+            cls._handle_iterable_deletion(client, chunk)

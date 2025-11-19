@@ -48,9 +48,10 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTOCOMPLETER_REDIS_CONNECTION = {
     "host": "localhost",
-    "port": 6379,
-    "db": 0,
+    "port": 7000,
 }
+
+AUTOCOMPLETER_REDIS_CLUSTER_MODE = True
 
 AUTOCOMPLETER_TEST_DATA = True
 
