@@ -1,4 +1,5 @@
 # Core packages needed
 Django>=3.2, <6.0
 hiredis>=1.0
-redis>=3.0
+# need 4.1 or greater for redis cluster support
+redis>=4.1.0

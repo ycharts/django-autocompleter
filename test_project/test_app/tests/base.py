@@ -6,19 +6,21 @@ from django.test import TestCase
 
 class AutocompleterTestCase(TestCase):
     def setUp(self):
-        self.redis = redis.Redis(
+        # TODO: automatically test both cluster and non-cluster modes
+        CLUSTER_MODE = settings.AUTOCOMPLETER_REDIS_CLUSTER_MODE
+        if CLUSTER_MODE:
+            from redis.cluster import RedisCluster as Redis
+        else:
+            from redis import Redis
+
+        self.redis = Redis(
             host=settings.AUTOCOMPLETER_REDIS_CONNECTION["host"],
             port=settings.AUTOCOMPLETER_REDIS_CONNECTION["port"],
-            db=settings.AUTOCOMPLETER_REDIS_CONNECTION["db"],
         )
 
     def tearDown(self):
         # Purge any possible old test data
-        old_data = self.redis.keys("djac.test.*")
-        pipe = self.redis.pipeline()
-        for i in self.chunk_list(old_data, 100):
-            pipe.delete(*i)
-        pipe.execute()
+        self.redis.flushdb()
 
     @classmethod
     def tearDownClass(cls):

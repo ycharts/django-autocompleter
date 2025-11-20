@@ -4,3 +4,4 @@ coverage
 pre-commit
 twine
 build
+ipdb

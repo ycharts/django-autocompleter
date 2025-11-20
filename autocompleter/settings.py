@@ -25,6 +25,9 @@ JOIN_CHARS = getattr(settings, "AUTOCOMPLETER_JOIN_CHARS", ["-", "/"])
 # Redis connection parameters
 REDIS_CONNECTION = getattr(settings, "AUTOCOMPLETER_REDIS_CONNECTION", {})
 
+# Whether we are connecting to a Redis Cluster
+REDIS_CLUSTER_MODE = getattr(settings, "AUTOCOMPLETER_REDIS_CLUSTER_MODE", False)
+
 # Name of variable autocompleter will look for to grab what term to search on.
 SUGGEST_PARAMETER_NAME = getattr(settings, "AUTOCOMPLETER_SUGGEST_PARAMETER_NAME", "q")
 
