@@ -758,9 +758,11 @@ class Autocompleter(AutocompleterBase):
                 pipe.zunionstore(final_result_key, term_result_keys, aggregate="MIN")
 
             use_facets = False
+            facet_keys_to_use = []
             if len(facet_keys_set) > 0:
                 provider_keys_set = set(provider.get_facets())
-                if facet_keys_set.issubset(provider_keys_set):
+                facet_keys_to_use = facet_keys_set.intersection(provider_keys_set)
+                if len(facet_keys_to_use) > 0:
                     use_facets = True
 
             if use_facets:
@@ -778,9 +780,12 @@ class Autocompleter(AutocompleterBase):
                                 facet_dict["key"],
                                 facet_dict["value"],
                             )
-                            facet_set_keys.append(facet_set_key)
+                            if facet_dict["key"] in facet_keys_to_use:
+                                facet_set_keys.append(facet_set_key)
 
-                        if len(facet_set_keys) == 1:
+                        if len(facet_set_keys) == 0:
+                            continue
+                        elif len(facet_set_keys) == 1:
                             facet_result_keys.append(facet_set_keys[0])
                         else:
                             facet_result_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
@@ -806,7 +811,6 @@ class Autocompleter(AutocompleterBase):
                     aggregate="MIN",
                 )
 
-            if use_facets:
                 pipe.zrange(facet_final_result_key, 0, MAX_RESULTS - 1)
             else:
                 pipe.zrange(final_result_key, 0, MAX_RESULTS - 1)
