@@ -655,6 +655,48 @@ class FacetMatchingTestCase(AutocompleterTestCase):
         matches = self.autocomp.suggest("ch", facets=facets)
         self.assertEqual(len(matches), 2)
 
+    def test_multiple_facet_dicts_match_subset(self):
+        """
+        Matching with multiple passed in facet dicts works
+        """
+        facets = [
+            {
+                "type": "and",
+                "facets": [{"key": "sector", "value": "Communication Services"}],
+            },
+            {
+                "type": "and",
+                "facets": [{"key": "industry", "value": "Telecom Services"}],
+            },
+        ]
+        extra_facet = {
+            "type": "or",
+            "facets": [{"key": "fake_key", "value": "fake value"}, {"key": "sector", "value": "Energy"}],
+        }
+        all_facets = facets + [extra_facet]
+
+        regular_matches = self.autocomp.suggest("ch", facets=facets)
+        matches = self.autocomp.suggest("ch", facets=all_facets)
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(regular_matches, matches)
+
+        facets = [
+            {"type": "and", "facets": [{"key": "sector", "value": "Energy"}]},
+            {
+                "type": "and",
+                "facets": [{"key": "industry", "value": "Oil & Gas Integrated"}],
+            },
+        ]
+        extra_facet = {
+            "type": "or",
+            "facets": [{"key": "fake_key", "value": "fake value"}, {"key": "sector", "value": "Communication Services"}],
+        }
+        all_facets = facets + [extra_facet]
+        regular_matches = self.autocomp.suggest("ch", facets=facets)
+        matches = self.autocomp.suggest("ch", facets=all_facets)
+        self.assertEqual(len(matches), 2)
+        self.assertEqual(regular_matches, matches)
+
 
 class MixedFacetProvidersMatchingTestCase(AutocompleterTestCase):
     fixtures = ["stock_test_data_small.json", "indicator_test_data_small.json"]
