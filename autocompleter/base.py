@@ -706,14 +706,6 @@ class Autocompleter(AutocompleterBase):
             facet_final_exact_match_key,
         }
 
-        facet_keys_set = set()
-        if len(facets) > 0:
-            # we use from_iterable to flatten the list comprehension into a single list
-            sub_facets = itertools.chain.from_iterable(
-                [facet["facets"] for facet in facets]
-            )
-            facet_keys_set = set([sub_facet["key"] for sub_facet in sub_facets])
-
         MOVE_EXACT_MATCHES_TO_TOP = registry.get_autocompleter_setting(
             self.name, "MOVE_EXACT_MATCHES_TO_TOP"
         )
@@ -721,6 +713,7 @@ class Autocompleter(AutocompleterBase):
         MAX_RESULTS = registry.get_autocompleter_setting(self.name, "MAX_RESULTS")
 
         pipe = REDIS.pipeline()
+        print(f'facets: {facets}')
         for provider in providers:
             provider_name = provider.provider_name
 
@@ -757,51 +750,62 @@ class Autocompleter(AutocompleterBase):
                 final_result_key = base_result_key
                 pipe.zunionstore(final_result_key, term_result_keys, aggregate="MIN")
 
-            use_facets = False
-            facet_keys_to_use = []
-            if len(facet_keys_set) > 0:
-                provider_keys_set = set(provider.get_facets())
-                facet_keys_to_use = facet_keys_set.intersection(provider_keys_set)
-                if len(facet_keys_to_use) > 0:
-                    use_facets = True
+            provider_keys_set = set(provider.get_facets())
 
-            if use_facets:
-                facet_result_keys = []
-                for facet in facets:
-                    try:
-                        facet_type = facet["type"]
-                        if facet_type not in ["and", "or"]:
-                            continue
-                        facet_list = facet["facets"]
-                        facet_set_keys = []
-                        for facet_dict in facet_list:
-                            facet_set_key = FACET_SET_BASE_NAME % (
-                                provider_name,
-                                facet_dict["key"],
-                                facet_dict["value"],
-                            )
-                            if facet_dict["key"] in facet_keys_to_use:
-                                facet_set_keys.append(facet_set_key)
-
-                        if len(facet_set_keys) == 0:
-                            continue
-                        elif len(facet_set_keys) == 1:
-                            facet_result_keys.append(facet_set_keys[0])
-                        else:
-                            facet_result_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
-                            facet_result_keys.append(facet_result_key)
-                            keys_to_delete.add(facet_result_key)
-                            if facet_type == "and":
-                                pipe.zinterstore(
-                                    facet_result_key, facet_set_keys, aggregate="MIN"
-                                )
-                            else:
-                                pipe.zunionstore(
-                                    facet_result_key, facet_set_keys, aggregate="MIN"
-                                )
-                    except KeyError:
+            facets_used = False
+            facet_result_keys = []
+            for facet_group in facets:
+                if provider_name == 'sa':
+                    print(f'facet_group: {facet_group}')
+                try:
+                    facet_type = facet_group["type"]
+                    if facet_type not in ["and", "or"]:
                         continue
 
+                    facet_list = facet_group["facets"]
+                    facet_group_keys_set = set([sub_facet["key"] for sub_facet in facet_list])
+                    if not facet_group_keys_set.issubset(provider_keys_set):
+                        # For a given facet_group, if the provider does not support all the facet keys, then we can't
+                        # filter based on it, and we skip the facet_group
+                        continue
+                    facets_used = True
+
+                    facet_set_keys = []
+                    for facet_dict in facet_list:
+                        facet_set_key = FACET_SET_BASE_NAME % (
+                            provider_name,
+                            facet_dict["key"],
+                            facet_dict["value"],
+                        )
+                        facet_set_keys.append(facet_set_key)
+
+                    if len(facet_set_keys) == 0:
+                        continue
+                    elif len(facet_set_keys) == 1:
+                        if provider_name == 'sa':
+                            print(f'facet_set_keys[0]: {facet_set_keys[0]}')
+                            print('\n')
+                        facet_result_keys.append(facet_set_keys[0])
+                    else:
+                        facet_result_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
+                        facet_result_keys.append(facet_result_key)
+                        keys_to_delete.add(facet_result_key)
+                        if facet_type == "and":
+                            pipe.zinterstore(
+                                facet_result_key, facet_set_keys, aggregate="MIN"
+                            )
+                        else:
+                            pipe.zunionstore(
+                                facet_result_key, facet_set_keys, aggregate="MIN"
+                            )
+                        if provider_name == 'sa':
+                            print(f'facet_result_key: {facet_result_key}')
+                            print(f'facet_set_keys: {facet_set_keys}')
+                            print('\n')
+                except KeyError:
+                    continue
+
+            if facets_used:
                 # We want to calculate the intersection of all the intermediate facet sets created so far
                 # along with the final result set. So we append the final_result_key to the list of
                 # facet_result_keys and store the intersection in the faceted final result set.
@@ -810,7 +814,6 @@ class Autocompleter(AutocompleterBase):
                     facet_result_keys + [final_result_key],
                     aggregate="MIN",
                 )
-
                 pipe.zrange(facet_final_result_key, 0, MAX_RESULTS - 1)
             else:
                 pipe.zrange(final_result_key, 0, MAX_RESULTS - 1)
@@ -840,7 +843,7 @@ class Autocompleter(AutocompleterBase):
                 # exact term matches don't bypass the requirement of having matching facet values.
                 # To achieve this, we intersect all faceted matches (exact-and-non-exact) with
                 # all exact matches.
-                if use_facets:
+                if facets_used:
                     pipe.zinterstore(
                         facet_final_exact_match_key,
                         facet_result_keys + [final_exact_match_key],
