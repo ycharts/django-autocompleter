@@ -713,7 +713,6 @@ class Autocompleter(AutocompleterBase):
         MAX_RESULTS = registry.get_autocompleter_setting(self.name, "MAX_RESULTS")
 
         pipe = REDIS.pipeline()
-        print(f'facets: {facets}')
         for provider in providers:
             provider_name = provider.provider_name
 
@@ -755,8 +754,6 @@ class Autocompleter(AutocompleterBase):
             facets_used = False
             facet_result_keys = []
             for facet_group in facets:
-                if provider_name == 'sa':
-                    print(f'facet_group: {facet_group}')
                 try:
                     facet_type = facet_group["type"]
                     if facet_type not in ["and", "or"]:
@@ -782,9 +779,6 @@ class Autocompleter(AutocompleterBase):
                     if len(facet_set_keys) == 0:
                         continue
                     elif len(facet_set_keys) == 1:
-                        if provider_name == 'sa':
-                            print(f'facet_set_keys[0]: {facet_set_keys[0]}')
-                            print('\n')
                         facet_result_keys.append(facet_set_keys[0])
                     else:
                         facet_result_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
@@ -798,10 +792,6 @@ class Autocompleter(AutocompleterBase):
                             pipe.zunionstore(
                                 facet_result_key, facet_set_keys, aggregate="MIN"
                             )
-                        if provider_name == 'sa':
-                            print(f'facet_result_key: {facet_result_key}')
-                            print(f'facet_set_keys: {facet_set_keys}')
-                            print('\n')
                 except KeyError:
                     continue
 
