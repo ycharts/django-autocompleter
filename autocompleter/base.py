@@ -765,7 +765,6 @@ class Autocompleter(AutocompleterBase):
                         # For a given facet_group, if the provider does not support all the facet keys, then we can't
                         # filter based on it, and we skip the facet_group
                         continue
-                    facets_used = True
 
                     facet_set_keys = []
                     for facet_dict in facet_list:
@@ -794,6 +793,8 @@ class Autocompleter(AutocompleterBase):
                             )
                 except KeyError:
                     continue
+
+                facets_used = True
 
             if facets_used:
                 # We want to calculate the intersection of all the intermediate facet sets created so far
