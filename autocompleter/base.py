@@ -494,6 +494,13 @@ class AutocompleterModelProvider(AutocompleterProviderBase):
         """
         return cls.model._default_manager.iterator()
 
+    def get_relevant_field_names():
+        """
+        Get the relevant fields that need to be updated in order for an update to the autocompleter to be necessary. 
+        This is used to avoid unnecessary updates to the autocompleter when irrelevant fields are updated.
+        """
+        return {}
+
 
 class AutocompleterDictProvider(AutocompleterProviderBase):
     # Model this provider is related to

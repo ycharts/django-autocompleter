@@ -190,16 +190,29 @@ class AutocompleterRegistry(object):
 registry = AutocompleterRegistry()
 
 
-def add_obj_to_autocompleter(sender, instance, created, add_error_handler = None, remove_error_handler = None, **kwargs):
+def add_obj_to_autocompleter(sender, instance, created, add_error_handler = None, remove_error_handler = None, update_fields = [], **kwargs):
     if instance is None:
         return
 
     provider_classes = registry.get_all_by_model(sender)
     for provider_class in provider_classes:
         provider = provider_class(instance)
+        relevant_fields = provider.get_relevant_field_names()
         if provider.include_item():
             try:
-                provider.store()
+                # If update_fields is empty, then we want to update the autocompleter 
+                # regardless of which fields were updated.
+                # If relevant_fields is not defined in the provider class, then we want to 
+                # update the autocompleter regardless of which fields were updated.
+                # If relevant_fields is defined and update_fields is defined, then we only want to 
+                # update the autocompleter if any updated field is a relevant field
+                if relevant_fields and update_fields:
+                    if any(field in relevant_fields for field in update_fields):
+                        provider.store()
+                    else:
+                        print("not storing in autocompleter")
+                else:
+                    provider.store()
             except Exception as e:
                 if add_error_handler:
                     add_error_handler(instance, e)
