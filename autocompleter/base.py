@@ -9,11 +9,9 @@ import redis
 
 from autocompleter import registry, settings, utils
 
-REDIS = redis.Redis(
-    host=settings.REDIS_CONNECTION["host"],
-    port=settings.REDIS_CONNECTION["port"],
-    db=settings.REDIS_CONNECTION["db"],
-)
+redis_client_settings = settings.REDIS_CONNECTION
+
+REDIS = redis.Redis(**redis_client_settings)
 
 if settings.TEST_DATA:
     AUTO_BASE_NAME = "djac.test.%s"
