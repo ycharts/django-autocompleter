@@ -617,6 +617,94 @@ class SignalBasedStoringTestCase(AutocompleterTestCase):
 
         signal_registry.unregister(Stock)
 
+
+class UpdateFieldsTestCase(AutocompleterTestCase):
+    @patch("autocompleter.base.AutocompleterProviderBase.store")
+    def test_update_fields_none_stores(self, mock_store):
+        """
+        update_fields None should store as usual.
+        """
+        aapl = Stock(symbol="AAPL", name="Apple", market_cap=50)
+        relevant_fields = {"symbol", "name"}
+
+        with patch.object(
+            StockAutocompleteProvider,
+            "get_relevant_field_names",
+            new=staticmethod(lambda: relevant_fields),
+        ), patch.object(
+            FacetedStockAutocompleteProvider,
+            "get_relevant_field_names",
+            new=staticmethod(lambda: relevant_fields),
+        ):
+            add_obj_to_autocompleter(Stock, aapl, False, update_fields=None)
+
+        self.assertEqual(mock_store.call_count, 2)
+
+    @patch("autocompleter.base.AutocompleterProviderBase.store")
+    def test_update_fields_empty_stores(self, mock_store):
+        """
+        update_fields empty list should store as usual.
+        """
+        aapl = Stock(symbol="AAPL", name="Apple", market_cap=50)
+        relevant_fields = {"symbol", "name"}
+
+        with patch.object(
+            StockAutocompleteProvider,
+            "get_relevant_field_names",
+            new=staticmethod(lambda: relevant_fields),
+        ), patch.object(
+            FacetedStockAutocompleteProvider,
+            "get_relevant_field_names",
+            new=staticmethod(lambda: relevant_fields),
+        ):
+            add_obj_to_autocompleter(Stock, aapl, False, update_fields=[])
+
+        self.assertEqual(mock_store.call_count, 2)
+
+    @patch("autocompleter.base.AutocompleterProviderBase.store")
+    def test_update_fields_relevant_stores(self, mock_store):
+        """
+        update_fields with relevant fields should store.
+        """
+        aapl = Stock(symbol="AAPL", name="Apple", market_cap=50)
+        relevant_fields = {"symbol", "name"}
+
+        with patch.object(
+            StockAutocompleteProvider,
+            "get_relevant_field_names",
+            new=staticmethod(lambda: relevant_fields),
+        ), patch.object(
+            FacetedStockAutocompleteProvider,
+            "get_relevant_field_names",
+            new=staticmethod(lambda: relevant_fields),
+        ):
+            add_obj_to_autocompleter(Stock, aapl, False, update_fields=["symbol"])
+
+        self.assertEqual(mock_store.call_count, 2)
+
+    @patch("autocompleter.base.AutocompleterProviderBase.store")
+    def test_update_fields_irrelevant_skips_store(self, mock_store):
+        """
+        update_fields with irrelevant fields should skip store.
+        """
+        aapl = Stock(symbol="AAPL", name="Apple", market_cap=50)
+        relevant_fields = {"symbol", "name"}
+
+        with patch.object(
+            StockAutocompleteProvider,
+            "get_relevant_field_names",
+            new=staticmethod(lambda: relevant_fields),
+        ), patch.object(
+            FacetedStockAutocompleteProvider,
+            "get_relevant_field_names",
+            new=staticmethod(lambda: relevant_fields),
+        ):
+            add_obj_to_autocompleter(
+                Stock, aapl, False, update_fields=["market_cap"]
+            )
+
+        self.assertEqual(mock_store.call_count, 0)
+
     def test_register(self):
         """
         Register/Unregister works
