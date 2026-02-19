@@ -190,7 +190,7 @@ class AutocompleterRegistry(object):
 registry = AutocompleterRegistry()
 
 
-def add_obj_to_autocompleter(sender, instance, created, add_error_handler = None, remove_error_handler = None, update_fields = [], **kwargs):
+def add_obj_to_autocompleter(sender, instance, created, update_fields, add_error_handler = None, remove_error_handler = None, **kwargs):
     if instance is None:
         return
 
@@ -209,8 +209,6 @@ def add_obj_to_autocompleter(sender, instance, created, add_error_handler = None
                 if relevant_fields and update_fields:
                     if any(field in relevant_fields for field in update_fields):
                         provider.store()
-                    else:
-                        print("not storing in autocompleter")
                 else:
                     provider.store()
             except Exception as e:
