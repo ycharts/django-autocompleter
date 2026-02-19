@@ -190,7 +190,7 @@ class AutocompleterRegistry(object):
 registry = AutocompleterRegistry()
 
 
-def add_obj_to_autocompleter(sender, instance, created, update_fields, add_error_handler = None, remove_error_handler = None, **kwargs):
+def add_obj_to_autocompleter(sender, instance, created, update_fields = None, add_error_handler = None, remove_error_handler = None, **kwargs):
     if instance is None:
         return
 
