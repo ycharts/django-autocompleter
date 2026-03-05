@@ -57,8 +57,9 @@ class AutocompleterBase(object):
         # an error when trying to deserialize it.
         # Here, we check to see if the redis stored value is b"inf" and only deserialize it when it's
         # not. If it is, we leave it as "inf"
-
-        return json.loads(raw.decode("utf-8")) if raw != b"inf" else "inf"
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        return json.loads(raw) if raw != "inf" else "inf"
 
     @staticmethod
     def _get_prefixes_set(norm_terms_list):
@@ -461,6 +462,7 @@ class AutocompleterProviderBase(AutocompleterBase):
         if facets is not None:
             self.__class__.clear_facets(obj_id, facets)
         self.__class__.clear_score(obj_id)
+
 
 
 class AutocompleterModelProvider(AutocompleterProviderBase):
