@@ -9,7 +9,17 @@ import redis
 
 from autocompleter import registry, settings, utils
 
-redis_client_settings = settings.REDIS_CONNECTION
+# We don't use all settings because the connection dict currently has decode_responses set to True, but the
+# autocompleter repo is structured around bytes, not strings.
+redis_client_settings = {
+    'host': settings.REDIS_CONNECTION["host"],
+    'port': settings.REDIS_CONNECTION["port"],
+    'db': settings.REDIS_CONNECTION["db"],
+}
+if settings.REDIS_CONNECTION.get('socket_timeout', None) is not None:
+    redis_client_settings['socket_timeout'] = settings.REDIS_CONNECTION['socket_timeout']
+if settings.REDIS_CONNECTION.get('socket_connect_timeout', None) is not None:
+    redis_client_settings['socket_connect_timeout'] = settings.REDIS_CONNECTION['socket_connect_timeout']
 
 REDIS = redis.Redis(**redis_client_settings)
 
