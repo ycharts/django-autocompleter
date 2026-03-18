@@ -1,17 +1,18 @@
 import logging
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
-from autocompleter import Autocompleter
+from autocompleter import Autocompleter, registry
 
 
 class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
-            "--name",
+            "--autocompleter_provider",
             action="store",
-            dest="name",
-            help="Name of autocompleter to initialize. Defaults to default autocompleter name.",
+            dest="autocompleter_provider",
+            required=True,
+            help="Name of autocompleter provider to initialize.",
             type=str,
         )
         parser.add_argument(
@@ -62,24 +63,63 @@ class Command(BaseCommand):
         logging.basicConfig(level=level, format="%(name)s: %(levelname)s: %(message)s")
         self.log = logging.getLogger("commands.autocompleter_init")
 
-        autocomp = Autocompleter(options["name"])
-        if options["remove"]:
-            self.log.info(
-                "Removing all objects for autocompleter: %s" % (options["name"])
+        provider_name = options["autocompleter_provider"]
+        provider_class = None
+        for provider_classes in registry._providers_by_ac.values():
+            for candidate_provider_class in provider_classes:
+                if candidate_provider_class.get_provider_name() == provider_name:
+                    provider_class = candidate_provider_class
+                    break
+            if provider_class is not None:
+                break
+
+        if provider_class is None:
+            raise CommandError(
+                "No provider named '%s' is registered in any autocompleter." % provider_name
             )
-            autocomp.remove_all()
+
+        should_clear_cache = options["remove"] or options["clear_cache"] or options["update"]
+        autocompleters = []
+        if should_clear_cache:
+            # Cache keys are tied to autocompleter names, so to keep the same behavior
+            # where .clear_cache() is called in remove_all or update_all we need to invalidate
+            # every autocompleter cache related to this autocompleter provider. 
+            autocompleter_names = [
+                autocompleter_name
+                for autocompleter_name, provider_classes in registry._providers_by_ac.items()
+                if provider_class in provider_classes
+            ]
+            autocompleters = [
+                Autocompleter(autocompleter_name)
+                for autocompleter_name in sorted(autocompleter_names)
+            ]
+
+        log_target = "autocompleter provider: %s" % (provider_name)
+
+        if options["remove"]:
+            self.log.info("Removing all objects for %s" % (log_target))
+            for obj in provider_class.get_iterator():
+                provider_class(obj).remove()
+            for autocomp in autocompleters:
+                autocomp.clear_cache()
+
         if options["store"]:
             delete_old = options["delete_old"]
-            self.log.info(
-                "Storing all objects for autocompleter: %s" % (options["name"])
-            )
-            autocomp.store_all(delete_old=delete_old)
+            self.log.info("Storing all objects for %s" % (log_target))
+            for obj in provider_class.get_iterator():
+                provider = provider_class(obj)
+                if provider.include_item():
+                    provider.store(delete_old=delete_old)
+
         if options["clear_cache"]:
-            self.log.info("Clearing cache for autocompleter: %s" % (options["name"]))
-            autocomp.clear_cache()
+            self.log.info("Clearing cache for %s" % (log_target))
+            for autocomp in autocompleters:
+                autocomp.clear_cache()
+
         if options["update"]:
-            self.log.info(
-                "Updating all objects with updates for autocompleter: %s"
-                % (options["name"])
-            )
-            autocomp.update_all()
+            self.log.info("Updating all objects with updates for %s" % (log_target))
+            # Update this provider once; then clear caches for all related autocompleters.
+            updater = autocompleters[0]
+            updater.update_provider(provider_class)
+            for autocomp in autocompleters:
+                autocomp.clear_cache()

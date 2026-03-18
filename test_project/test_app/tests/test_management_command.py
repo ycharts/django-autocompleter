@@ -8,6 +8,6 @@ class ManagementCommandTestCase(TestCase):
         Can call autocompleter_init without any error
         """
         try:
-            call_command("autocompleter_init")
+            call_command("autocompleter_init", autocompleter_provider="stock")
         except Exception:
             self.fail("Calling autocompleter_init has raised an exception unexpectedly")
