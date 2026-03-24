@@ -1195,10 +1195,6 @@ class Autocompleter(AutocompleterBase):
         * <origin> - where the data was taken from: live means current data and db means stored in redis
         * <data_structure> - data structure used to hold the data: either map or set
         """
-
-        def _facet_list_to_set(facet_list):
-            return frozenset((f["key"], f["value"]) for f in facet_list)
-
         provider_name = provider_class.get_provider_name()
         self.log.info(f"Start update of provider {provider_name}")
         scores_live_map = dict()
@@ -1474,3 +1470,7 @@ class Autocompleter(AutocompleterBase):
         # Execute all the additions and deletions in a single connection
         pipe.execute()
         self.log.info(f"End update of provider {provider_name}")
+
+    @staticmethod
+    def _facet_list_to_set(facet_list):
+        return frozenset((f["key"], f["value"]) for f in facet_list)
