@@ -1473,8 +1473,10 @@ class Autocompleter(AutocompleterBase):
 
     @classmethod
     def _facet_list_to_set(cls, facet_list):
+        """Creates an unmodifiable set of facet key value pairs from a list of dict facets."""
         return frozenset((f["key"], cls._hashable_value(f["value"])) for f in facet_list)
 
     @staticmethod
     def _hashable_value(value):
+        """Convert possible non-hashable value types to hashable types."""
         return tuple(value) if isinstance(value, list) else value
