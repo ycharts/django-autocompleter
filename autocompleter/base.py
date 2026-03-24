@@ -1259,11 +1259,11 @@ class Autocompleter(AutocompleterBase):
 
         # Build the facets maps into sets for quick comparisons
         facets_live_set = {
-            (obj_id, _facet_list_to_set(list_of_dicts))
+            (obj_id, self._facet_list_to_set(list_of_dicts))
             for obj_id, list_of_dicts in facets_live_map.items()
         }
         facets_db_set = {
-            (obj_id, _facet_list_to_set(list_of_dicts))
+            (obj_id, self._facet_list_to_set(list_of_dicts))
             for obj_id, list_of_dicts in facets_db_map.items()
         }
         # Build a set with the obj_ids of objects that updated their score.
@@ -1401,8 +1401,8 @@ class Autocompleter(AutocompleterBase):
             obj_id for obj_id, _ in facets_live_set ^ facets_db_set
         }
         for obj_id in objs_with_updated_facets | objs_with_updated_scores:
-            live_obj_facets = _facet_list_to_set(facets_live_map.get(obj_id, []))
-            db_obj_facets = _facet_list_to_set(facets_db_map.get(obj_id, []))
+            live_obj_facets = self._facet_list_to_set(facets_live_map.get(obj_id, []))
+            db_obj_facets = self._facet_list_to_set(facets_db_map.get(obj_id, []))
 
             facets_to_add = (
                 live_obj_facets
