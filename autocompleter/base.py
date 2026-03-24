@@ -1471,6 +1471,10 @@ class Autocompleter(AutocompleterBase):
         pipe.execute()
         self.log.info(f"End update of provider {provider_name}")
 
+    @classmethod
+    def _facet_list_to_set(cls, facet_list):
+        return frozenset((f["key"], cls._hashable_value(f["value"])) for f in facet_list)
+
     @staticmethod
-    def _facet_list_to_set(facet_list):
-        return frozenset((f["key"], f["value"]) for f in facet_list)
+    def _hashable_value(value):
+        return tuple(value) if isinstance(value, list) else value
