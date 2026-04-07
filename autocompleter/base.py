@@ -1195,10 +1195,6 @@ class Autocompleter(AutocompleterBase):
         * <origin> - where the data was taken from: live means current data and db means stored in redis
         * <data_structure> - data structure used to hold the data: either map or set
         """
-
-        def _facet_list_to_set(facet_list):
-            return frozenset((f["key"], f["value"]) for f in facet_list)
-
         provider_name = provider_class.get_provider_name()
         self.log.info(f"Start update of provider {provider_name}")
         scores_live_map = dict()
@@ -1263,11 +1259,11 @@ class Autocompleter(AutocompleterBase):
 
         # Build the facets maps into sets for quick comparisons
         facets_live_set = {
-            (obj_id, _facet_list_to_set(list_of_dicts))
+            (obj_id, self._facet_list_to_set(list_of_dicts))
             for obj_id, list_of_dicts in facets_live_map.items()
         }
         facets_db_set = {
-            (obj_id, _facet_list_to_set(list_of_dicts))
+            (obj_id, self._facet_list_to_set(list_of_dicts))
             for obj_id, list_of_dicts in facets_db_map.items()
         }
         # Build a set with the obj_ids of objects that updated their score.
@@ -1405,8 +1401,8 @@ class Autocompleter(AutocompleterBase):
             obj_id for obj_id, _ in facets_live_set ^ facets_db_set
         }
         for obj_id in objs_with_updated_facets | objs_with_updated_scores:
-            live_obj_facets = _facet_list_to_set(facets_live_map.get(obj_id, []))
-            db_obj_facets = _facet_list_to_set(facets_db_map.get(obj_id, []))
+            live_obj_facets = self._facet_list_to_set(facets_live_map.get(obj_id, []))
+            db_obj_facets = self._facet_list_to_set(facets_db_map.get(obj_id, []))
 
             facets_to_add = (
                 live_obj_facets
@@ -1474,3 +1470,13 @@ class Autocompleter(AutocompleterBase):
         # Execute all the additions and deletions in a single connection
         pipe.execute()
         self.log.info(f"End update of provider {provider_name}")
+
+    @classmethod
+    def _facet_list_to_set(cls, facet_list):
+        """Creates an unmodifiable set of facet key value pairs from a list of dict facets."""
+        return frozenset((f["key"], cls._hashable_value(f["value"])) for f in facet_list)
+
+    @staticmethod
+    def _hashable_value(value):
+        """Convert possible non-hashable value types to hashable types."""
+        return tuple(value) if isinstance(value, list) else value
