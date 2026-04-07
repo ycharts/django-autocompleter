@@ -44,8 +44,8 @@ class Command(BaseCommand):
         provider_classes = []
         for provider_name in provider_names:
             provider_class = None
-            for provider_classes in registry._providers_by_ac.values():
-                for candidate_provider_class in provider_classes:
+            for ac_provider_classes in registry._providers_by_ac.values():
+                for candidate_provider_class in ac_provider_classes:
                     if candidate_provider_class.get_provider_name() == provider_name:
                         provider_class = candidate_provider_class
                         break
