@@ -16,6 +16,20 @@ class Command(BaseCommand):
             type=str,
         )
         parser.add_argument(
+            "--remove",
+            action="store_true",
+            default=False,
+            dest="remove",
+            help="Remove all data for the given autocompleter providers.",
+        )
+        parser.add_argument(
+            "--store",
+            action="store_true",
+            default=False,
+            dest="store",
+            help="Store all data for the given autocompleter providers.",
+        )
+        parser.add_argument(
             "--clear_cache",
             action="store_true",
             default=False,
@@ -57,20 +71,27 @@ class Command(BaseCommand):
                 )
             provider_classes.append(provider_class)
 
-        should_clear_cache = options["clear_cache"]
-        autocompleters = []
-        if should_clear_cache:
-            autocompleter_names = set()
-            for pc in provider_classes:
-                for ac_name, ac_provider_classes in registry._providers_by_ac.items():
-                    if pc in ac_provider_classes:
-                        autocompleter_names.add(ac_name)
-            autocompleters = [Autocompleter(name) for name in sorted(autocompleter_names)]
+        autocompleter_names = set()
+        for pc in provider_classes:
+            for ac_name, ac_provider_classes in registry._providers_by_ac.items():
+                if pc in ac_provider_classes:
+                    autocompleter_names.add(ac_name)
+        autocompleters = [Autocompleter(name) for name in sorted(autocompleter_names)]
 
         log_target = "autocompleter providers: %s" % ", ".join(provider_names)
+ 
+        if options["remove"]:
+            self.log.info("Removing all objects for %s" % log_target)
+            for pc in provider_classes:
+                pc.remove_all()
+
+        if options["store"]:
+            self.log.info("Storing all objects for %s" % log_target)
+            for pc in provider_classes:
+                pc.store_all()
 
         if options["update"]:
-            self.log.info("Updating all objects with updates for %s" % (log_target))
+            self.log.info("Updating all objects with updates for %s" % log_target)
             for pc in provider_classes:
                 ac_names_for_provider = sorted(
                     ac_name
@@ -81,6 +102,6 @@ class Command(BaseCommand):
                 updater.update_provider(pc)
 
         if options["clear_cache"]:
-            self.log.info("Clearing cache for %s" % (log_target))
+            self.log.info("Clearing cache for %s" % log_target)
             for autocomp in autocompleters:
                 autocomp.clear_cache()

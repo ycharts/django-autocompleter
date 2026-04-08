@@ -473,6 +473,25 @@ class AutocompleterProviderBase(AutocompleterBase):
             self.__class__.clear_facets(obj_id, facets)
         self.__class__.clear_score(obj_id)
 
+    @classmethod
+    def store_all(cls):
+        """
+        Store all objects for this provider.
+        DO NOT override this.
+        """
+        for obj in cls.get_iterator():
+            provider = cls(obj)
+            if provider.include_item():
+                provider.store()
+
+    @classmethod
+    def remove_all(cls):
+        """
+        Remove all objects for this provider.
+        DO NOT override this.
+        """
+        for obj in cls.get_iterator():
+            cls(obj).remove()
 
 
 class AutocompleterModelProvider(AutocompleterProviderBase):
