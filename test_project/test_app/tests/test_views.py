@@ -7,6 +7,7 @@ try:
 except ImportError:
     from django.urls import reverse
 
+from test_app.autocompleters import StockAutocompleteProvider, FacetedStockAutocompleteProvider
 from autocompleter import Autocompleter, settings
 
 
@@ -16,10 +17,10 @@ class TestSuggestView(AutocompleterTestCase):
     def setUp(self):
         super(TestSuggestView, self).setUp()
         self.autocomp = Autocompleter("stock")
-        self.autocomp.store_all()
+        StockAutocompleteProvider.store_all()
 
     def tearDown(self):
-        self.autocomp.remove_all()
+        StockAutocompleteProvider.remove_all()
 
     def test_simple_suggest_match(self):
         """
@@ -59,11 +60,11 @@ class TestExactSuggestView(AutocompleterTestCase):
         super(TestExactSuggestView, self).setUp()
         setattr(settings, "MAX_EXACT_MATCH_WORDS", 10)
         self.autocomp = Autocompleter("stock")
-        self.autocomp.store_all()
+        StockAutocompleteProvider.store_all()
 
     def tearDown(self):
         setattr(settings, "MAX_EXACT_MATCH_WORDS", 0)
-        self.autocomp.remove_all()
+        StockAutocompleteProvider.remove_all()
 
     def test_simple_exact_suggest_match(self):
         """
@@ -101,10 +102,10 @@ class TextFacetSuggestView(AutocompleterTestCase):
     def setUp(self):
         super(TextFacetSuggestView, self).setUp()
         self.autocomp = Autocompleter("faceted_stock")
-        self.autocomp.store_all()
+        FacetedStockAutocompleteProvider.store_all()
 
     def tearDown(self):
-        self.autocomp.remove_all()
+        FacetedStockAutocompleteProvider.remove_all()
 
     def test_facet_suggest_match(self):
         """

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from test_app.tests.base import AutocompleterTestCase
-from test_app.autocompleters import IndicatorAutocompleteProvider
+from test_app.autocompleters import IndicatorAutocompleteProvider, StockAutocompleteProvider
 from autocompleter import Autocompleter, registry
 from autocompleter import settings as auto_settings
 
@@ -15,11 +15,11 @@ class StockExactStorageTestCase(AutocompleterTestCase):
         Exact matches are not stored by default
         """
         autocomp = Autocompleter("stock")
-        autocomp.store_all()
+        StockAutocompleteProvider.store_all()
         keys = self.redis.keys("djac.test.stock.e.*")
         self.assertEqual(len(keys), 0)
         self.assertFalse(self.redis.exists("djac.test.stock.es"))
-        autocomp.remove_all()
+        StockAutocompleteProvider.remove_all()
 
     def test_exact_matches_stored_when_turned_on(self):
         """
@@ -28,11 +28,11 @@ class StockExactStorageTestCase(AutocompleterTestCase):
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
 
         autocomp = Autocompleter("stock")
-        autocomp.store_all()
+        StockAutocompleteProvider.store_all()
         keys = self.redis.keys("djac.test.stock.e.*")
         self.assertNotEqual(len(keys), 0)
         self.assertTrue(self.redis.exists("djac.test.stock.es"))
-        autocomp.remove_all()
+        StockAutocompleteProvider.remove_all()
 
         # Must set the setting back to where it was as it will persist
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 0)
@@ -43,17 +43,17 @@ class StockExactStorageTestCase(AutocompleterTestCase):
         """
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
         autocomp = Autocompleter("stock")
-        autocomp.store_all()
+        StockAutocompleteProvider.store_all()
         matches = autocomp.exact_suggest("International Business Machines Corporation")
         self.assertEqual(len(matches), 1)
-        autocomp.remove_all()
+        StockAutocompleteProvider.remove_all()
 
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 2)
         autocomp = Autocompleter("stock")
-        autocomp.store_all()
+        StockAutocompleteProvider.store_all()
         matches = autocomp.exact_suggest("International Business Machines Corporation")
         self.assertEqual(len(matches), 0)
-        autocomp.remove_all()
+        StockAutocompleteProvider.remove_all()
 
         # Must set the setting back to where it was as it will persist
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 0)
@@ -66,30 +66,28 @@ class MultiExactStorageTestCase(AutocompleterTestCase):
         """
         Exact matches are not stored by default, in the multi-provider case
         """
-        autocomp = Autocompleter("mixed")
-        autocomp.store_all()
+        self.store_all_for_ac("mixed")
         keys = self.redis.keys("djac.test.stock.e.*")
         self.assertEqual(len(keys), 0)
         self.assertFalse(self.redis.exists("djac.test.stock.es"))
         keys = self.redis.keys("djac.test.ind.e.*")
         self.assertEqual(len(keys), 0)
         self.assertFalse(self.redis.exists("djac.test.ind.es"))
-        autocomp.remove_all()
+        self.remove_all_for_ac("mixed")
 
     def test_exact_matches_stored_when_turned_on(self):
         """
         We store exact matches when MAX_EXACT_MATCH_WORDS is turned on, in the multi-provider case
         """
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
-        autocomp = Autocompleter("mixed")
-        autocomp.store_all()
+        self.store_all_for_ac("mixed")
         keys = self.redis.keys("djac.test.stock.e.*")
         self.assertNotEqual(len(keys), 0)
         self.assertTrue(self.redis.exists("djac.test.stock.es"))
         keys = self.redis.keys("djac.test.ind.e.*")
         self.assertNotEqual(len(keys), 0)
         self.assertTrue(self.redis.exists("djac.test.ind.es"))
-        autocomp.remove_all()
+        self.remove_all_for_ac("mixed")
 
         # Must set the setting back to where it was as it will persist
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 0)
@@ -102,16 +100,15 @@ class MultiExactStorageTestCase(AutocompleterTestCase):
         registry.set_provider_setting(
             IndicatorAutocompleteProvider, "MAX_EXACT_MATCH_WORDS", 0
         )
-        autocomp = Autocompleter("mixed")
 
-        autocomp.store_all()
+        self.store_all_for_ac("mixed")
         keys = self.redis.keys("djac.test.stock.e.*")
         self.assertNotEqual(len(keys), 0)
         self.assertTrue(self.redis.exists("djac.test.stock.es"))
         keys = self.redis.keys("djac.test.ind.e.*")
         self.assertEqual(len(keys), 0)
         self.assertFalse(self.redis.exists("djac.test.ind.es"))
-        autocomp.remove_all()
+        self.remove_all_for_ac("mixed")
         registry.del_provider_setting(
             IndicatorAutocompleteProvider, "MAX_EXACT_MATCH_WORDS"
         )
@@ -127,11 +124,11 @@ class StockExactMatchTestCase(AutocompleterTestCase):
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
 
         self.autocomp = Autocompleter("stock")
-        self.autocomp.store_all()
+        StockAutocompleteProvider.store_all()
 
     def tearDown(self):
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 0)
-        self.autocomp.remove_all()
+        StockAutocompleteProvider.remove_all()
 
     def test_exact_suggest(self):
         """
@@ -191,11 +188,11 @@ class MultiExactMatchTestCase(AutocompleterTestCase):
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
 
         self.autocomp = Autocompleter("mixed")
-        self.autocomp.store_all()
+        self.store_all_for_ac("mixed")
 
     def tearDown(self):
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 0)
-        self.autocomp.remove_all()
+        self.remove_all_for_ac("mixed")
 
     def test_exact_suggest(self):
         """

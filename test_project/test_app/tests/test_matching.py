@@ -19,10 +19,10 @@ class StockMatchTestCase(AutocompleterTestCase):
     def setUp(self):
         super(StockMatchTestCase, self).setUp()
         self.autocomp = Autocompleter("stock")
-        self.autocomp.store_all()
+        StockAutocompleteProvider.store_all()
 
     def tearDown(self):
-        self.autocomp.remove_all()
+        StockAutocompleteProvider.remove_all()
 
     def test_simple_match(self):
         """
@@ -122,10 +122,10 @@ class IndicatorMatchTestCase(AutocompleterTestCase):
     def setUp(self):
         super().setUp()
         self.autocomp = Autocompleter("indicator")
-        self.autocomp.store_all()
+        IndicatorAutocompleteProvider.store_all()
 
     def tearDown(self):
-        self.autocomp.remove_all()
+        IndicatorAutocompleteProvider.remove_all()
 
     def test_same_score_word_based_id_ordering(self):
         """
@@ -206,10 +206,10 @@ class DictProviderMatchingTestCase(AutocompleterTestCase):
     def setUp(self):
         super(DictProviderMatchingTestCase, self).setUp()
         self.autocomp = Autocompleter("metric")
-        self.autocomp.store_all()
+        CalcAutocompleteProvider.store_all()
 
     def tearDown(self):
-        self.autocomp.remove_all()
+        CalcAutocompleteProvider.remove_all()
 
     def test_basic_match(self):
         matches = self.autocomp.suggest("m")
@@ -222,10 +222,10 @@ class MultiMatchingTestCase(AutocompleterTestCase):
     def setUp(self):
         super(MultiMatchingTestCase, self).setUp()
         self.autocomp = Autocompleter("mixed")
-        self.autocomp.store_all()
+        self.store_all_for_ac("mixed")
 
     def tearDown(self):
-        self.autocomp.remove_all()
+        self.remove_all_for_ac("mixed")
 
     def test_basic_match(self):
         """
@@ -290,7 +290,7 @@ class MaxResultsMatchingTestCase(AutocompleterTestCase):
     def setUp(self):
         super(MaxResultsMatchingTestCase, self).setUp()
         self.autocomp = Autocompleter("ind_stock")
-        self.autocomp.store_all()
+        self.store_all_for_ac("ind_stock")
 
     def test_max_results_respected(self):
         """
@@ -377,7 +377,7 @@ class FacetMatchingTestCase(AutocompleterTestCase):
     def setUp(self):
         super(FacetMatchingTestCase, self).setUp()
         self.autocomp = Autocompleter("faceted_stock")
-        self.autocomp.store_all()
+        self.store_all_for_ac("faceted_stock")
 
     def test_facet_or_match(self):
         """
@@ -507,7 +507,7 @@ class FacetMatchingTestCase(AutocompleterTestCase):
         """
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
         temp_autocomp = Autocompleter("faceted_stock")
-        temp_autocomp.store_all()
+        self.store_all_for_ac("faceted_stock")
 
         facets = [
             {
@@ -526,7 +526,7 @@ class FacetMatchingTestCase(AutocompleterTestCase):
 
         # Must set the setting back to where it was as it will persist
         setattr(auto_settings, "MOVE_EXACT_MATCHES_TO_TOP", False)
-        temp_autocomp.remove_all()
+        self.remove_all_for_ac("faceted_stock")
 
     def test_facet_mismatch_with_move_exact_matches(self):
         """
@@ -537,7 +537,7 @@ class FacetMatchingTestCase(AutocompleterTestCase):
 
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
         temp_autocomp = Autocompleter("faceted_stock")
-        temp_autocomp.store_all()
+        self.store_all_for_ac("faceted_stock")
 
         facets = [
             {
@@ -569,7 +569,7 @@ class FacetMatchingTestCase(AutocompleterTestCase):
 
         # Must set the setting back to where it was as it will persist
         setattr(auto_settings, "MOVE_EXACT_MATCHES_TO_TOP", False)
-        temp_autocomp.remove_all()
+        self.remove_all_for_ac("faceted_stock")
 
     def test_exact_match_low_score_still_at_top(self):
         """
@@ -585,7 +585,7 @@ class FacetMatchingTestCase(AutocompleterTestCase):
         setattr(auto_settings, "MAX_RESULTS", 2)
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
         temp_autocomp = Autocompleter("faceted_stock")
-        temp_autocomp.store_all()
+        self.store_all_for_ac("faceted_stock")
         facets = [
             {
                 "type": "and",
@@ -606,7 +606,7 @@ class FacetMatchingTestCase(AutocompleterTestCase):
         setattr(auto_settings, "MOVE_EXACT_MATCHES_TO_TOP", False)
         setattr(auto_settings, "MAX_RESULTS", 10)
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 0)
-        temp_autocomp.remove_all()
+        self.remove_all_for_ac("faceted_stock")
 
     def test_facet_works_with_cache(self):
         """
@@ -704,7 +704,7 @@ class MixedFacetProvidersMatchingTestCase(AutocompleterTestCase):
     def setUp(self):
         super(MixedFacetProvidersMatchingTestCase, self).setUp()
         self.autocomp = Autocompleter("facet_stock_no_facet_ind")
-        self.autocomp.store_all()
+        self.store_all_for_ac("facet_stock_no_facet_ind")
 
     def test_autocompleter_with_facet_and_non_facet_providers(self):
         """
