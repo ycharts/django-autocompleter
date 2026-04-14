@@ -16,8 +16,6 @@ from test_app.autocompleters import (
     CalcAutocompleteProvider,
     FacetedStockAutocompleteProvider,
     IndicatorAliasedAutocompleteProvider,
-    IndicatorAutocompleteProvider,
-    IndicatorSelectiveAutocompleteProvider,
     StockAutocompleteProvider,
 )
 from test_app.models import Indicator, Stock
@@ -110,7 +108,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         signal_registry.register(Indicator)
 
         autocomp = Autocompleter("indicator")
-        IndicatorAutocompleteProvider.store_all()
+        self.store_all_for_ac("indicator")
 
         unemployment = Indicator.objects.get(internal_name="unemployment_rate")
 
@@ -120,7 +118,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         self.assertTrue(autocomp.suggest("free parking")[0]["id"] == 1)
         self.assertTrue(len(autocomp.suggest("US Unemployment Rate")) == 0)
 
-        IndicatorAutocompleteProvider.remove_all()
+        self.remove_all_for_ac("indicator")
         signal_registry.unregister(Indicator)
 
     def test_removal_when_no_longer_passing_inclusion_test(self):
@@ -130,7 +128,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         signal_registry.register(Indicator)
 
         autocomp = Autocompleter("indicator_selective")
-        IndicatorSelectiveAutocompleteProvider.store_all()
+        self.store_all_for_ac("indicator_selective")
 
         unemployment = Indicator.objects.get(internal_name="unemployment_rate")
 
@@ -146,7 +144,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         self.assertTrue(len(autocomp.suggest("free parking")) == 0)
         self.assertTrue(len(autocomp.suggest("US Unemployment Rate")) == 0)
 
-        IndicatorSelectiveAutocompleteProvider.remove_all()
+        self.remove_all_for_ac("indicator_selective")
         signal_registry.unregister(Indicator)
 
     def test_dict_store_and_remove_all_basic(self):
@@ -250,7 +248,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         """
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 2)
         autocomp = Autocompleter("stock")
-        StockAutocompleteProvider.store_all()
+        self.store_all_for_ac("stock")
 
         autocomp.exact_suggest("aapl")
         keys = self.redis.keys("djac.results.*")
@@ -263,7 +261,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         After suggest call, all intermediate result sets are removed
         """
         autocomp = Autocompleter("stock")
-        StockAutocompleteProvider.store_all()
+        self.store_all_for_ac("stock")
 
         autocomp.suggest("aapl")
         keys = self.redis.keys("djac.results.*")
@@ -469,16 +467,16 @@ class SelectiveStoringTestCase(AutocompleterTestCase):
         We can exclude certain objects from the autocompleter selectively.
         """
         autocomp = Autocompleter("indicator")
-        IndicatorAutocompleteProvider.store_all()
+        self.store_all_for_ac("indicator")
         matches = autocomp.suggest("us unemployment rate")
         self.assertEqual(len(matches), 1)
-        IndicatorAutocompleteProvider.remove_all()
+        self.remove_all_for_ac("indicator")
 
         autocomp = Autocompleter("indicator_selective")
-        IndicatorSelectiveAutocompleteProvider.store_all()
+        self.store_all_for_ac("indicator_selective")
         matches = autocomp.suggest("us unemployment rate")
         self.assertEqual(len(matches), 0)
-        IndicatorSelectiveAutocompleteProvider.remove_all()
+        self.remove_all_for_ac("indicator_selective")
 
 
 class SignalBasedStoringTestCase(AutocompleterTestCase):

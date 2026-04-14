@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 from test_app.autocompleters import (
-    StockAutocompleteProvider,
     IndicatorAutocompleteProvider,
     CalcAutocompleteProvider,
 )
@@ -19,10 +18,10 @@ class StockMatchTestCase(AutocompleterTestCase):
     def setUp(self):
         super(StockMatchTestCase, self).setUp()
         self.autocomp = Autocompleter("stock")
-        StockAutocompleteProvider.store_all()
+        self.store_all_for_ac("stock")
 
     def tearDown(self):
-        StockAutocompleteProvider.remove_all()
+        self.remove_all_for_ac("stock")
 
     def test_simple_match(self):
         """
@@ -122,10 +121,10 @@ class IndicatorMatchTestCase(AutocompleterTestCase):
     def setUp(self):
         super().setUp()
         self.autocomp = Autocompleter("indicator")
-        IndicatorAutocompleteProvider.store_all()
+        self.store_all_for_ac("indicator")
 
     def tearDown(self):
-        IndicatorAutocompleteProvider.remove_all()
+        self.remove_all_for_ac("indicator")
 
     def test_same_score_word_based_id_ordering(self):
         """
@@ -206,10 +205,10 @@ class DictProviderMatchingTestCase(AutocompleterTestCase):
     def setUp(self):
         super(DictProviderMatchingTestCase, self).setUp()
         self.autocomp = Autocompleter("metric")
-        CalcAutocompleteProvider.store_all()
+        self.store_all_for_ac("metric")
 
     def tearDown(self):
-        CalcAutocompleteProvider.remove_all()
+        self.remove_all_for_ac("metric")
 
     def test_basic_match(self):
         matches = self.autocomp.suggest("m")

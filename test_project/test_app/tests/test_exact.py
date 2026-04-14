@@ -124,11 +124,11 @@ class StockExactMatchTestCase(AutocompleterTestCase):
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
 
         self.autocomp = Autocompleter("stock")
-        StockAutocompleteProvider.store_all()
+        self.store_all_for_ac("stock")
 
     def tearDown(self):
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 0)
-        StockAutocompleteProvider.remove_all()
+        self.remove_all_for_ac("stock")
 
     def test_exact_suggest(self):
         """

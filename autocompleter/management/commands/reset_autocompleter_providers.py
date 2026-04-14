@@ -93,13 +93,7 @@ class Command(BaseCommand):
         if options["update"]:
             self.log.info("Updating all objects with updates for %s" % log_target)
             for pc in provider_classes:
-                ac_names_for_provider = sorted(
-                    ac_name
-                    for ac_name, ac_pcs in registry._providers_by_ac.items()
-                    if pc in ac_pcs
-                )
-                updater = Autocompleter(ac_names_for_provider[0])
-                updater.update_provider(pc)
+                pc.update_all()
 
         if options["clear_cache"]:
             self.log.info("Clearing cache for %s" % log_target)
