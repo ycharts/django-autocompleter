@@ -1009,7 +1009,7 @@ class Autocompleter(AutocompleterBase):
         # Get the max results autocompleter setting
         MAX_RESULTS = registry.get_autocompleter_setting(self.name, "MAX_RESULTS")
 
-        pipe =  pipe = REDIS.pipeline(transaction=False)
+        pipe = REDIS.pipeline(transaction=False)
         for provider in providers:
             provider_name = provider.provider_name
 
@@ -1316,9 +1316,12 @@ class Autocompleter(AutocompleterBase):
             # Do not attempt zunionstore on empty list because redis errors out.
             if len(keys) == 0:
                 continue
-            pipe.zunionstore(intermediate_result_key, keys, aggregate="MIN")
-            pipe.zrange(intermediate_result_key, 0, MAX_RESULTS - 1)
-            pipe.delete(intermediate_result_key)
+            elif len(keys) == 1:
+                pipe.zrange(keys[0], 0, MAX_RESULTS - 1)
+            else:
+                pipe.zunionstore(intermediate_result_key, keys, aggregate="MIN")
+                pipe.zrange(intermediate_result_key, 0, MAX_RESULTS - 1)
+                pipe.unlink(intermediate_result_key)
         results = [i for i in pipe.execute() if type(i) == list]
 
         # Create a dict mapping provider to result IDs
