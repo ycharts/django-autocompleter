@@ -566,7 +566,7 @@ class AutocompleterProviderBase(AutocompleterBase):
 
         # Remove provider's obj_id -> score mapping
         key = SCORE_MAP_BASE_NAME % (provider_name,)
-        pipe.delunlinkete(key)
+        pipe.unlink(key)
 
         # End pipeline
         pipe.execute()
