@@ -943,14 +943,12 @@ class Autocompleter(AutocompleterBase):
 
         # If told to, cache the final results for CACHE_TIMEOUT seconds
         if settings.CACHE_TIMEOUT:
-            pipe = REDIS.pipeline(transaction=False)
-            pipe.setex(
+            REDIS.setex(
                 cache_key,
                 settings.CACHE_TIMEOUT,
                 self.__class__._serialize_data(results),
             )
-            pipe.sadd(CACHE_KEYS_SET_BASE_NAME % (self.name,), cache_key)
-            pipe.execute()
+            REDIS.sadd(CACHE_KEYS_SET_BASE_NAME % (self.name,), cache_key)
         return results
 
     def exact_suggest(self, term):
@@ -1017,14 +1015,12 @@ class Autocompleter(AutocompleterBase):
 
         # If told to, cache the final results for CACHE_TIMEOUT seconds
         if settings.CACHE_TIMEOUT:
-            pipe = REDIS.pipeline(transaction=False)
-            pipe.setex(
+            REDIS.setex(
                 cache_key,
                 settings.CACHE_TIMEOUT,
                 self.__class__._serialize_data(results),
             )
-            pipe.sadd(CACHE_KEYS_SET_BASE_NAME % (self.name,), cache_key)
-            pipe.execute()
+            REDIS.sadd(CACHE_KEYS_SET_BASE_NAME % (self.name,), cache_key)
         return results
 
     def get_provider_result_from_id(self, provider_name, object_id):
