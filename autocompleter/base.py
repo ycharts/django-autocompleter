@@ -603,7 +603,7 @@ class Autocompleter(AutocompleterBase):
 
             # Get list of facets
             facet_base = FACET_BASE_NAME % (provider_name,)
-            keys = [facet.decode() for facet in REDIS.scan_iter(match=facet_base + ".*")]
+            keys = [facet.decode() for facet in REDIS.keys(facet_base + ".*")]
             facet_keys = self.chunk_list(keys, 100)
 
             # Start pipeline
@@ -652,7 +652,7 @@ class Autocompleter(AutocompleterBase):
             if not settings.TEST_DATA:
                 key = AUTO_BASE_NAME % (provider_name,)
                 key += "*"
-                leftovers = list(REDIS.scan_iter(match=key))
+                leftovers = REDIS.keys(key)
 
                 # Start pipeline
                 pipe = REDIS.pipeline()
@@ -677,7 +677,7 @@ class Autocompleter(AutocompleterBase):
             "*",
         )
 
-        keys = list(REDIS.scan_iter(match=cache_key)) + list(REDIS.scan_iter(match=exact_cache_key))
+        keys = REDIS.keys(cache_key) + REDIS.keys(exact_cache_key)
         if len(keys) > 0:
             REDIS.unlink(*keys)
 
