@@ -15,10 +15,8 @@ class AutocompleterTestCase(TestCase):
     def tearDown(self):
         # Purge any possible old test data
         old_data = self.redis.keys("djac.test.*")
-        pipe = self.redis.pipeline()
-        for i in self.chunk_list(old_data, 100):
-            pipe.delete(*i)
-        pipe.execute()
+        if old_data:
+            self.redis.unlink(*old_data)
 
     @classmethod
     def tearDownClass(cls):

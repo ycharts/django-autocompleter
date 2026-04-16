@@ -45,6 +45,9 @@ TERM_MAP_BASE_NAME = AUTO_BASE_NAME + ".tm"
 FACET_BASE_NAME = AUTO_BASE_NAME + ".f"
 FACET_SET_BASE_NAME = FACET_BASE_NAME + ".%s.%s"
 FACET_MAP_BASE_NAME = AUTO_BASE_NAME + ".fm"
+FACET_KEYS_SET_BASE_NAME = AUTO_BASE_NAME + ".fks"
+
+CACHE_KEYS_SET_BASE_NAME = AUTO_BASE_NAME + ".cks"
 
 RESULT_SET_BASE_NAME = "djac.results.%s"
 
@@ -430,6 +433,7 @@ class AutocompleterProviderBase(AutocompleterBase):
                 key = EXACT_SET_BASE_NAME % (provider_name,)
                 pipe.sadd(key, norm_term)
 
+        facet_keys_set = FACET_KEYS_SET_BASE_NAME % (provider_name,)
         for facet in facet_dicts:
             key = FACET_SET_BASE_NAME % (
                 provider_name,
@@ -437,6 +441,7 @@ class AutocompleterProviderBase(AutocompleterBase):
                 facet["value"],
             )
             pipe.zadd(key, {obj_id: score})
+            pipe.sadd(facet_keys_set, key)
 
         # Map provider's obj_id -> data payload
         key = AUTO_BASE_NAME % (provider_name,)
@@ -572,76 +577,40 @@ class Autocompleter(AutocompleterBase):
         if provider_classes is None:
             return
 
+        keys_to_delete = []
         for provider_class in provider_classes:
             provider_name = provider_class.provider_name
 
-            # Get list of all prefixes for autocompleter
+            # All prefix sorted set keys
             prefix_set_name = PREFIX_SET_BASE_NAME % (provider_name,)
             prefixes = REDIS.smembers(prefix_set_name)
-            keys = [
-                PREFIX_BASE_NAME
-                % (
-                    provider_name,
-                    prefix.decode(),
-                )
+            keys_to_delete.extend(
+                PREFIX_BASE_NAME % (provider_name, prefix.decode())
                 for prefix in prefixes
-            ]
-            chunked_prefix_keys = self.chunk_list(keys, 100)
+            )
+            keys_to_delete.append(prefix_set_name)
 
-            # Get list of all exact match terms for autocompleter
+            # All exact match sorted set keys
             exact_set_name = EXACT_SET_BASE_NAME % (provider_name,)
             norm_terms = REDIS.smembers(exact_set_name)
-            keys = [
-                EXACT_BASE_NAME
-                % (
-                    provider_name,
-                    norm_term.decode(),
-                )
+            keys_to_delete.extend(
+                EXACT_BASE_NAME % (provider_name, norm_term.decode())
                 for norm_term in norm_terms
-            ]
-            chunked_norm_term_keys = self.chunk_list(keys, 100)
+            )
+            keys_to_delete.append(exact_set_name)
 
-            # Get list of facets
-            facet_base = FACET_BASE_NAME % (provider_name,)
-            keys = [facet.decode() for facet in REDIS.scan_iter(match=facet_base + ".*")]
-            facet_keys = self.chunk_list(keys, 100)
+            # All facet sorted set keys (from tracking set)
+            facet_keys_set = FACET_KEYS_SET_BASE_NAME % (provider_name,)
+            keys_to_delete.extend(
+                k.decode() for k in REDIS.smembers(facet_keys_set)
+            )
+            keys_to_delete.append(facet_keys_set)
+            keys_to_delete.append(FACET_MAP_BASE_NAME % (provider_name,))
 
-            # Start pipeline
-            pipe = REDIS.pipeline()
-
-            # For each prefix, delete sorted set (in groups of 100)
-            for chunk in chunked_prefix_keys:
-                pipe.unlink(*chunk)
-            # Delete the set of prefixes
-            pipe.unlink(prefix_set_name)
-
-            # For each exact match term, delete sorted set (in groups of 100
-            for chunk in chunked_norm_term_keys:
-                pipe.unlink(*chunk)
-            # Delete the set of exact matches
-            pipe.unlink(exact_set_name)
-
-            # For each facet, delete sorted set (in groups of 100)
-            for chunk in facet_keys:
-                pipe.unlink(*chunk)
-            # Delete the facet mapping
-            facet_map_name = FACET_MAP_BASE_NAME % (provider_name,)
-            pipe.unlink(facet_map_name)
-
-            # Remove provider's obj_id -> data payload mapping
-            key = AUTO_BASE_NAME % (provider_name,)
-            pipe.unlink(key)
-
-            # Remove provider's obj_id -> norm terms mapping
-            key = TERM_MAP_BASE_NAME % (provider_name,)
-            pipe.unlink(key)
-
-            # Remove provider's obj_id -> score mapping
-            key = SCORE_MAP_BASE_NAME % (provider_name,)
-            pipe.unlink(key)
-
-            # End pipeline
-            pipe.execute()
+            # Provider data, term, and score maps
+            keys_to_delete.append(AUTO_BASE_NAME % (provider_name,))
+            keys_to_delete.append(TERM_MAP_BASE_NAME % (provider_name,))
+            keys_to_delete.append(SCORE_MAP_BASE_NAME % (provider_name,))
 
             # There is a possibility that some straggling keys have not been
             # cleaned up if their ID changed but for some reason we did not
@@ -652,16 +621,10 @@ class Autocompleter(AutocompleterBase):
             if not settings.TEST_DATA:
                 key = AUTO_BASE_NAME % (provider_name,)
                 key += "*"
-                leftovers = list(REDIS.scan_iter(match=key))
+                leftovers = list(REDIS.scan_iter(match=key, count=1000))
+                keys_to_delete.extend(leftovers)
 
-                # Start pipeline
-                pipe = REDIS.pipeline()
-
-                for i in leftovers:
-                    pipe.unlink(i)
-
-                # End pipeline
-                pipe.execute()
+        REDIS.unlink(*keys_to_delete)
 
         # Just to be extra super clean, let's delete all cached results
         # for this autocompleter
@@ -671,15 +634,11 @@ class Autocompleter(AutocompleterBase):
         """
         Clear cache
         """
-        cache_key = CACHE_BASE_NAME % (self.name, "*", "*")
-        exact_cache_key = EXACT_CACHE_BASE_NAME % (
-            self.name,
-            "*",
-        )
-
-        keys = list(REDIS.scan_iter(match=cache_key)) + list(REDIS.scan_iter(match=exact_cache_key))
+        cache_keys_set = CACHE_KEYS_SET_BASE_NAME % (self.name,)
+        keys = list(REDIS.smembers(cache_keys_set))
         if len(keys) > 0:
             REDIS.unlink(*keys)
+        REDIS.unlink(cache_keys_set)
 
     def suggest(self, term, facets=[]):
         """
@@ -982,13 +941,16 @@ class Autocompleter(AutocompleterBase):
 
         results = self._get_results_from_ids(provider_results)
 
-        # If told to, cache the final results for CACHE_TIMEOUT secnds
+        # If told to, cache the final results for CACHE_TIMEOUT seconds
         if settings.CACHE_TIMEOUT:
-            REDIS.setex(
+            pipe = REDIS.pipeline(transaction=False)
+            pipe.setex(
                 cache_key,
                 settings.CACHE_TIMEOUT,
                 self.__class__._serialize_data(results),
             )
+            pipe.sadd(CACHE_KEYS_SET_BASE_NAME % (self.name,), cache_key)
+            pipe.execute()
         return results
 
     def exact_suggest(self, term):
@@ -1055,11 +1017,14 @@ class Autocompleter(AutocompleterBase):
 
         # If told to, cache the final results for CACHE_TIMEOUT seconds
         if settings.CACHE_TIMEOUT:
-            REDIS.setex(
+            pipe = REDIS.pipeline(transaction=False)
+            pipe.setex(
                 cache_key,
                 settings.CACHE_TIMEOUT,
                 self.__class__._serialize_data(results),
             )
+            pipe.sadd(CACHE_KEYS_SET_BASE_NAME % (self.name,), cache_key)
+            pipe.execute()
         return results
 
     def get_provider_result_from_id(self, provider_name, object_id):
