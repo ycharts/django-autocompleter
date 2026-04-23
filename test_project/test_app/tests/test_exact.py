@@ -14,7 +14,6 @@ class StockExactStorageTestCase(AutocompleterTestCase):
         """
         Exact matches are not stored by default
         """
-        autocomp = Autocompleter("stock")
         StockAutocompleteProvider.store_all()
         keys = self.redis.keys("djac.test.stock.e.*")
         self.assertEqual(len(keys), 0)

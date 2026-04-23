@@ -2,7 +2,7 @@ import logging
 
 from django.core.management.base import BaseCommand, CommandError
 
-from autocompleter import Autocompleter, registry
+from autocompleter import registry
 
 
 class Command(BaseCommand):
@@ -30,13 +30,6 @@ class Command(BaseCommand):
             help="Store all data for the given autocompleter providers.",
         )
         parser.add_argument(
-            "--clear_cache",
-            action="store_true",
-            default=False,
-            dest="clear_cache",
-            help="Clear cache for autocompleter. Default to false.",
-        )
-        parser.add_argument(
             "--update",
             action="store_true",
             default=False,
@@ -54,31 +47,21 @@ class Command(BaseCommand):
         logging.basicConfig(level=level, format="%(name)s: %(levelname)s: %(message)s")
         self.log = logging.getLogger("commands.reset_autocompleter_providers")
 
-        provider_names = [name.strip() for name in options["autocompleter_providers"].split(",")]
-        provider_classes = []
-        for provider_name in provider_names:
-            provider_class = None
-            for ac_provider_classes in registry._providers_by_ac.values():
-                for candidate_provider_class in ac_provider_classes:
-                    if candidate_provider_class.get_provider_name() == provider_name:
-                        provider_class = candidate_provider_class
-                        break
-                if provider_class is not None:
-                    break
-            if provider_class is None:
-                raise CommandError(
-                    "No provider named '%s' is registered in any autocompleter." % provider_name
-                )
-            provider_classes.append(provider_class)
+        input_provider_names = [name.strip() for name in options["autocompleter_providers"].split(",")]
 
-        autocompleter_names = set()
-        for pc in provider_classes:
-            for ac_name, ac_provider_classes in registry._providers_by_ac.items():
-                if pc in ac_provider_classes:
-                    autocompleter_names.add(ac_name)
-        autocompleters = [Autocompleter(name) for name in sorted(autocompleter_names)]
+        provider_name_to_provider = {
+            provider.get_provider_name(): provider
+            for providers in registry._providers_by_ac.values()
+            for provider in providers
+        }
 
-        log_target = "autocompleter providers: %s" % ", ".join(provider_names)
+        missing = [n for n in input_provider_names if n not in provider_name_to_provider]
+        if missing:
+            raise CommandError(f"No providers registered with these names: {missing}")
+
+        provider_classes = [provider_name_to_provider[n] for n in input_provider_names]
+
+        log_target = "autocompleter providers: %s" % ", ".join(input_provider_names)
  
         if options["remove"]:
             self.log.info("Removing all objects for %s" % log_target)
@@ -94,8 +77,3 @@ class Command(BaseCommand):
             self.log.info("Updating all objects with updates for %s" % log_target)
             for pc in provider_classes:
                 pc.update_all()
-
-        if options["clear_cache"]:
-            self.log.info("Clearing cache for %s" % log_target)
-            for autocomp in autocompleters:
-                autocomp.clear_cache()
