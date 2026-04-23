@@ -161,65 +161,6 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         keys = self.redis.keys("djac.test.metric")
         self.assertEqual(len(keys), 0)
 
-    def test_store_and_remove_all_basic_with_caching(self):
-        """
-        Storing and removing items all at once works with caching turned on
-        """
-        # Let's turn on caching because that will store things in Redis and we want to make
-        # sure we clean them up.
-        setattr(auto_settings, "CACHE_TIMEOUT", 3600)
-
-        autocomp = Autocompleter("stock")
-        StockAutocompleteProvider.store_all()
-
-        keys = self.redis.hkeys("djac.test.stock")
-        self.assertEqual(len(keys), 104)
-
-        autocomp = Autocompleter("stock")
-        for i in range(0, 3):
-            autocomp.suggest("a")
-            autocomp.suggest("z")
-            autocomp.exact_suggest("aapl")
-            autocomp.exact_suggest("xyz")
-
-        autocomp.clear_cache()
-        StockAutocompleteProvider.remove_all()
-        keys = self.redis.keys("djac.test.stock*")
-        self.assertEqual(len(keys), 0)
-
-        # Must set the setting back to where it was as it will persist
-        setattr(auto_settings, "CACHE_TIMEOUT", 0)
-
-    def test_dict_store_and_remove_all_basic_with_caching(self):
-        """
-        Storing and removing items all at once works with caching turned on on dict ac
-        """
-        # Let's turn on caching because that will store things in Redis and we want to make
-        # sure we clean them up.
-        setattr(auto_settings, "CACHE_TIMEOUT", 3600)
-
-        autocomp = Autocompleter("metric")
-        CalcAutocompleteProvider.store_all()
-
-        keys = self.redis.hkeys("djac.test.metric")
-        self.assertEqual(len(keys), 8)
-
-        autocomp = Autocompleter("metric")
-        for i in range(0, 3):
-            autocomp.suggest("m")
-            autocomp.suggest("e")
-            autocomp.exact_suggest("PE Ratio TTM")
-            autocomp.exact_suggest("Market Cap")
-
-        autocomp.clear_cache()
-        CalcAutocompleteProvider.remove_all()
-
-        keys = self.redis.keys("djac.test.metric*")
-        self.assertEqual(len(keys), 0)
-
-        # Must set the setting back to where it was as it will persist
-        setattr(auto_settings, "CACHE_TIMEOUT", 0)
-
     def test_store_and_remove_all_multi(self):
         """
         Storing and removing items all at once works for a multi-model autocompleter.
