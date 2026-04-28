@@ -31,8 +31,9 @@ else:
     AUTO_BASE_NAME = "djac.%s"
     RESULT_SET_BASE_NAME = "djac.results.%s"
 
-CACHE_BASE_NAME = AUTO_BASE_NAME + ".c.%s.%s"
-EXACT_CACHE_BASE_NAME = AUTO_BASE_NAME + ".ce.%s"
+CACHE_BASE_NAME = AUTO_BASE_NAME + ".v%s.c.%s.%s"
+EXACT_CACHE_BASE_NAME = AUTO_BASE_NAME + ".v%s.ce.%s"
+CACHE_VERSION_BASE_NAME = AUTO_BASE_NAME + ".cv"
 
 PREFIX_BASE_NAME = AUTO_BASE_NAME + ".p.%s"
 PREFIX_SET_BASE_NAME = AUTO_BASE_NAME + ".ps"
@@ -667,19 +668,25 @@ class Autocompleter(AutocompleterBase):
         # for this autocompleter
         self.clear_cache()
 
+    def _get_cache_version(self):
+        """
+        Return the current cache version for this autocompleter.
+
+        Cache keys are namespaced by version so that clear_cache() can
+        invalidate every cached result with a single INCR.
+        """
+        version = REDIS.get(CACHE_VERSION_BASE_NAME % (self.name,))
+        return int(version) if version is not None else 0
+
     def clear_cache(self):
         """
-        Clear cache
-        """
-        cache_key = CACHE_BASE_NAME % (self.name, "*", "*")
-        exact_cache_key = EXACT_CACHE_BASE_NAME % (
-            self.name,
-            "*",
-        )
+        Invalidate all cached suggest/exact_suggest results for this autocompleter.
 
-        keys = REDIS.keys(cache_key) + REDIS.keys(exact_cache_key)
-        if len(keys) > 0:
-            REDIS.unlink(*keys)
+        Bumps the cache version so subsequent reads miss and recompute. Existing
+        cache keys are orphaned and expire via CACHE_TIMEOUT.
+        This makes cache invalidation O(1).
+        """
+        REDIS.incr(CACHE_VERSION_BASE_NAME % (self.name,))
 
     def suggest(self, term, facets=[]):
         """
@@ -693,6 +700,7 @@ class Autocompleter(AutocompleterBase):
         hashed_facets = self.hash_facets(facets)
         cache_key = CACHE_BASE_NAME % (
             self.name,
+            self._get_cache_version(),
             utils.get_normalized_term(term, settings.JOIN_CHARS),
             hashed_facets,
         )
@@ -1002,6 +1010,7 @@ class Autocompleter(AutocompleterBase):
         # If we have a cached version of the search results available, return it!
         cache_key = EXACT_CACHE_BASE_NAME % (
             self.name,
+            self._get_cache_version(),
             term,
         )
         if settings.CACHE_TIMEOUT and REDIS.exists(cache_key):
