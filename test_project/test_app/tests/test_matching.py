@@ -1,16 +1,21 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+from autocompleter import (
+    Autocompleter,
+    registry,
+)
+from autocompleter import (
+    settings as auto_settings,
+)
+
 from test_app.autocompleters import (
-    StockAutocompleteProvider,
-    IndicatorAutocompleteProvider,
     CalcAutocompleteProvider,
+    IndicatorAutocompleteProvider,
+    StockAutocompleteProvider,
 )
 from test_app.models import Stock
 from test_app.tests.base import AutocompleterTestCase
-
-from autocompleter import Autocompleter, registry
-from autocompleter import settings as auto_settings
 
 
 class StockMatchTestCase(AutocompleterTestCase):
@@ -99,6 +104,35 @@ class StockMatchTestCase(AutocompleterTestCase):
             matches2 = self.autocomp.suggest("a")
 
         self.assertEqual(len(matches), len(matches2))
+
+        # Must set the setting back to where it was as it will persist
+        setattr(auto_settings, "CACHE_TIMEOUT", 0)
+
+    def test_clear_cache_invalidates_results(self):
+        """
+        Tests cache invalidation works as expected
+        """
+        setattr(auto_settings, "CACHE_TIMEOUT", 3600)
+
+        # Warm the cache
+        initial = self.autocomp.suggest("a")
+        self.assertIn("AAPL", [m["search_name"] for m in initial])
+
+        # Remove aapl from the provider
+        aapl = Stock.objects.get(symbol="AAPL")
+        StockAutocompleteProvider(aapl).remove()
+
+        # A result is still hit because it's cached
+        cached = self.autocomp.suggest("a")
+        self.assertEqual(cached, initial)
+        self.assertIn("AAPL", [m["search_name"] for m in cached])
+
+        self.autocomp.clear_cache()
+
+        # Result no longer hit because cache has been cleared
+        fresh = self.autocomp.suggest("a")
+        self.assertNotIn("AAPL", [m["search_name"] for m in fresh])
+        self.assertNotEqual(fresh, initial)
 
         # Must set the setting back to where it was as it will persist
         setattr(auto_settings, "CACHE_TIMEOUT", 0)
