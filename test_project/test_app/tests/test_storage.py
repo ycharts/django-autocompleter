@@ -1,11 +1,18 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-
+import re
 from unittest.mock import MagicMock, patch
 
-from autocompleter import Autocompleter, base, registry, signal_registry
-from autocompleter import settings as auto_settings
+from autocompleter import (
+    Autocompleter,
+    base,
+    registry,
+    signal_registry,
+)
+from autocompleter import (
+    settings as auto_settings,
+)
 from autocompleter.registry import (
     add_obj_to_autocompleter,
     remove_obj_from_autocompleter,
@@ -98,8 +105,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         self.assertEqual(len(keys), 104)
 
         autocomp.remove_all()
-        keys = self.redis.keys("djac.test.stock*")
-        self.assertEqual(len(keys), 0)
+        self.assertEqual(self._non_cache_keys("djac.test.stock"), [])
 
     def test_orphan_removal(self):
         """
@@ -183,8 +189,12 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
             autocomp.exact_suggest("xyz")
 
         autocomp.remove_all()
-        keys = self.redis.keys("djac.test.stock*")
-        self.assertEqual(len(keys), 0)
+
+        non_cache_keys = self._non_cache_keys("djac.test.stock")
+        self.assertEqual(non_cache_keys, [])
+
+        self.assertEqual(autocomp.suggest("a"), [])
+        self.assertEqual(autocomp.exact_suggest("aapl"), [])
 
         # Must set the setting back to where it was as it will persist
         setattr(auto_settings, "CACHE_TIMEOUT", 0)
@@ -212,11 +222,26 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
 
         autocomp.remove_all()
 
-        keys = self.redis.keys("djac.test.metric*")
-        self.assertEqual(len(keys), 0)
+        non_cache_keys = self._non_cache_keys("djac.test.metric")
+        self.assertEqual(non_cache_keys, [])
+
+        self.assertEqual(autocomp.suggest("m"), [])
+        self.assertEqual(autocomp.exact_suggest("PE Ratio TTM"), [])
 
         # Must set the setting back to where it was as it will persist
         setattr(auto_settings, "CACHE_TIMEOUT", 0)
+
+    def _non_cache_keys(self, prefix):
+        """
+        Helper function to list all non-cache keys given a prefix.
+        """
+
+        cache_key_pattern = re.compile(re.escape(prefix) + r"(\.cv$|\.v\d+\.(c|ce)\.)")
+        return [
+            k
+            for k in self.redis.keys(prefix + "*")
+            if not cache_key_pattern.match(k.decode())
+        ]
 
     def test_store_and_remove_all_multi(self):
         """
@@ -233,20 +258,16 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         self.assertEqual(len(keys), 8)
 
         autocomp.remove_all()
-        keys = self.redis.keys("djac.test.stock*")
-        self.assertEqual(len(keys), 0)
-        keys = self.redis.keys("djac.test.ind*")
-        self.assertEqual(len(keys), 0)
-        keys = self.redis.keys("djac.test.mixed*")
-        self.assertEqual(len(keys), 0)
-        keys = self.redis.keys("djac.test.metric*")
-        self.assertEqual(len(keys), 0)
+        self.assertEqual(self._non_cache_keys("djac.test.stock"), [])
+        self.assertEqual(self._non_cache_keys("djac.test.ind"), [])
+        self.assertEqual(self._non_cache_keys("djac.test.mixed"), [])
+        self.assertEqual(self._non_cache_keys("djac.test.metric"), [])
 
     def test_remove_intermediate_results_exact_suggest(self):
         """
         After exact_suggest call, all intermediate result sets are removed
         """
-        setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 2)
+        auto_settings.MAX_EXACT_MATCH_WORDS = 2
         autocomp = Autocompleter("stock")
         autocomp.store_all()
 
