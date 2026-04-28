@@ -267,7 +267,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         """
         After exact_suggest call, all intermediate result sets are removed
         """
-        auto_settings.MAX_EXACT_MATCH_WORDS = 2
+        setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 2)
         autocomp = Autocompleter("stock")
         autocomp.store_all()
 
