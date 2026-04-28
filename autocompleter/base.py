@@ -704,8 +704,8 @@ class Autocompleter(AutocompleterBase):
             utils.get_normalized_term(term, settings.JOIN_CHARS),
             hashed_facets,
         )
-        if settings.CACHE_TIMEOUT and REDIS.exists(cache_key):
-            return self.__class__._deserialize_data(REDIS.get(cache_key))
+        if settings.CACHE_TIMEOUT and (cached := REDIS.get(cache_key)) is not None:
+            return self.__class__._deserialize_data(cached)
 
         # Get the normalized term variations we need to search for each term. A single term
         # could turn into multiple terms we need to search.
@@ -1013,8 +1013,8 @@ class Autocompleter(AutocompleterBase):
             self._get_cache_version(),
             term,
         )
-        if settings.CACHE_TIMEOUT and REDIS.exists(cache_key):
-            return self.__class__._deserialize_data(REDIS.get(cache_key))
+        if settings.CACHE_TIMEOUT and (cached := REDIS.get(cache_key)) is not None:
+            return self.__class__._deserialize_data(cached)
         provider_results = OrderedDict()
 
         # Get the normalized we need to search for each term... A single term
