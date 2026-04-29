@@ -452,9 +452,16 @@ class FacetMatchingTestCase(AutocompleterTestCase):
                 ],
             }
         ]
-        facet_matches = self.autocomp.suggest("a", facets=facets)
-        # AND group with an unsupported key is unsatisfiable — provider returns empty results
-        self.assertEqual(len(facet_matches), 0)
+        regular_matches = self.autocomp.suggest("a")
+        # since the 'thisisfake' key does not exist in our provider, the results for a facet
+        # suggest should be the same as a regular suggest if strict=False
+        facet_matches = self.autocomp.suggest("a", facets=facets, strict=False)
+        self.assertEqual(facet_matches, regular_matches)
+
+        # if strict=True, the AND group with an unsupported key is unsatisfiable, so provider returns empty results
+        strict_facet_matches = self.autocomp.suggest("a", facets=facets)
+        self.assertEqual(len(strict_facet_matches), 0)
+
 
     def test_provider_keys_is_subset_of_facet_keys_no_match(self):
         """
@@ -673,10 +680,14 @@ class FacetMatchingTestCase(AutocompleterTestCase):
         }
         all_facets = facets + [extra_facet]
 
-        matches = self.autocomp.suggest("ch", facets=all_facets)
-        # OR(fake_key, sector=Energy) drops fake_key, applies sector=Energy; but the AND groups
-        # require sector=Communication Services AND industry=Telecom Services — sector conflict → 0
-        self.assertEqual(len(matches), 0)
+        regular_matches = self.autocomp.suggest("ch", facets=facets)
+        matches = self.autocomp.suggest("ch", facets=all_facets, strict=False)
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(regular_matches, matches)
+
+        # if we use strict search suggestions, results will be filtered out
+        strict_matches = self.autocomp.suggest("ch", facets=all_facets)
+        self.assertEqual(len(strict_matches), 0)
 
         facets = [
             {"type": "and", "facets": [{"key": "sector", "value": "Energy"}]},
@@ -690,9 +701,13 @@ class FacetMatchingTestCase(AutocompleterTestCase):
             "facets": [{"key": "fake_key", "value": "fake value"}, {"key": "sector", "value": "Communication Services"}],
         }
         all_facets = facets + [extra_facet]
-        matches = self.autocomp.suggest("ch", facets=all_facets)
-        # OR(fake_key, sector=Communication Services) drops fake_key, applies sector=Communication Services;
-        # but AND groups require sector=Energy — sector conflict → 0
+        regular_matches = self.autocomp.suggest("ch", facets=facets)
+        matches = self.autocomp.suggest("ch", facets=all_facets, strict=False)
+        self.assertEqual(len(matches), 2)
+        self.assertEqual(regular_matches, matches)
+
+        # if we use strict search suggestions, results will be filtered out
+        strict_matches = self.autocomp.suggest("ch", facets=all_facets)
         self.assertEqual(len(matches), 0)
 
     def test_or_group_with_partial_keys_applies_supported_only(self):
@@ -807,16 +822,21 @@ class MixedFacetProvidersMatchingTestCase(AutocompleterTestCase):
             }
         ]
         matches = self.autocomp.suggest("a")
-        facet_matches = self.autocomp.suggest("a", facets=facets)
+        facet_matches = self.autocomp.suggest("a", facets=facets, strict=False)
+        strict_facet_matches = self.autocomp.suggest("a", facets=facets)
 
         # because we are using the faceted stock provider in the 'facet_stock_no_facet_ind' AC,
         # we expect using facets will decrease the amount of results when searching.
         self.assertEqual(len(matches["faceted_stock"]), 25)
         self.assertEqual(len(facet_matches["faceted_stock"]), 2)
 
-        # the indicator provider supports no facet keys; the AND group is unsatisfiable → empty
+        # since the indicator provider does not support facets,
+        # we expect the search results from both a facet and non-facet search to be the same if strict=False
         self.assertEqual(len(matches["ind"]), 16)
-        self.assertEqual(len(facet_matches["ind"]), 0)
+        self.assertEqual(len(matches["ind"]), len(facet_matches["ind"]))
+
+        # if we use strict search suggestions, indicators will be filtered out
+        self.assertEqual(len(strict_facet_matches["ind"]), 0)
 
         registry.del_autocompleter_setting("facet_stock_no_facet_ind", "MAX_RESULTS")
 
