@@ -680,13 +680,11 @@ class FacetMatchingTestCase(AutocompleterTestCase):
         }
         all_facets = facets + [extra_facet]
 
-        regular_matches = self.autocomp.suggest("ch", facets=facets)
+        # both strict and lenient search suggestions will filter results out,
+        # since we ignore `fake_key` facet but still apply `sector` facet in the `extra_facet` group
         matches = self.autocomp.suggest("ch", facets=all_facets, strict=False)
-        self.assertEqual(len(matches), 1)
-        self.assertEqual(regular_matches, matches)
-
-        # if we use strict search suggestions, results will be filtered out
         strict_matches = self.autocomp.suggest("ch", facets=all_facets)
+        self.assertEqual(len(matches), 0)
         self.assertEqual(len(strict_matches), 0)
 
         facets = [
@@ -701,14 +699,13 @@ class FacetMatchingTestCase(AutocompleterTestCase):
             "facets": [{"key": "fake_key", "value": "fake value"}, {"key": "sector", "value": "Communication Services"}],
         }
         all_facets = facets + [extra_facet]
-        regular_matches = self.autocomp.suggest("ch", facets=facets)
-        matches = self.autocomp.suggest("ch", facets=all_facets, strict=False)
-        self.assertEqual(len(matches), 2)
-        self.assertEqual(regular_matches, matches)
 
-        # if we use strict search suggestions, results will be filtered out
+        # both strict and lenient search suggestions will filter results out,
+        # since we ignore `fake_key` facet but still apply `sector` facet in the `extra_facet` group
+        matches = self.autocomp.suggest("ch", facets=all_facets, strict=False)
         strict_matches = self.autocomp.suggest("ch", facets=all_facets)
         self.assertEqual(len(matches), 0)
+        self.assertEqual(len(strict_matches), 0)
 
     def test_or_group_with_partial_keys_applies_supported_only(self):
         """
