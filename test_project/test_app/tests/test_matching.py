@@ -750,6 +750,40 @@ class FacetMatchingTestCase(AutocompleterTestCase):
         matches = self.autocomp.suggest("a", facets=facets)
         self.assertEqual(len(matches), 0)
 
+    def test_and_group_with_unsupported_key_lenient_returns_unfiltered(self):
+        """
+        AND facets group with unsupported key is skipped if strict=False, returns unfiltered results
+        """
+        facets = [
+            {
+                "type": "and",
+                "facets": [
+                    {"key": "sector", "value": "Energy"},
+                    {"key": "fake_key", "value": "anything"},
+                ],
+            }
+        ]
+        facet_matches = self.autocomp.suggest("a", facets=facets, strict=False)
+        regular_matches = self.autocomp.suggest("a")
+        self.assertEqual(facet_matches, regular_matches)
+
+    def test_or_group_with_all_unsupported_keys_lenient_returns_unfiltered(self):
+        """
+        OR group with all unsupported keys is skipped if strict=False, returns unfiltered results
+        """
+        facets = [
+            {
+                "type": "or",
+                "facets": [
+                    {"key": "fake_key", "value": "anything"},
+                    {"key": "other_fake", "value": "whatever"},
+                ],
+            }
+        ]
+        facet_matches = self.autocomp.suggest("a", facets=facets, strict=False)
+        regular_matches = self.autocomp.suggest("a")
+        self.assertEqual(facet_matches, regular_matches)
+
 
 class MixedFacetProvidersMatchingTestCase(AutocompleterTestCase):
     fixtures = ["stock_test_data_small.json", "indicator_test_data_small.json"]
@@ -817,5 +851,29 @@ class MixedFacetProvidersMatchingTestCase(AutocompleterTestCase):
 
         # indicator provider: supports no facets → all OR keys unsupported → empty
         self.assertEqual(len(matches["ind"]), 0)
+
+        registry.del_autocompleter_setting("facet_stock_no_facet_ind", "MAX_RESULTS")
+
+    def test_non_facet_provider_lenient_returns_unfiltered(self):
+        """
+        non-facet provider skips unsatisfiable AND group if strict=False, returns unfiltered results
+        """
+        registry.set_autocompleter_setting(
+            "facet_stock_no_facet_ind", "MAX_RESULTS", 100
+        )
+        facets = [
+            {
+                "type": "and",
+                "facets": [{"key": "sector", "value": "Financial Services"}],
+            }
+        ]
+        matches = self.autocomp.suggest("a")
+        facet_matches = self.autocomp.suggest("a", facets=facets, strict=False)
+
+        # stock provider still filters normally
+        self.assertEqual(len(facet_matches["faceted_stock"]), 2)
+
+        # indicator provider: AND group skipped (lenient) → same results as unfiltered
+        self.assertEqual(len(facet_matches["ind"]), len(matches["ind"]))
 
         registry.del_autocompleter_setting("facet_stock_no_facet_ind", "MAX_RESULTS")

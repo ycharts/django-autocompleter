@@ -681,7 +681,7 @@ class Autocompleter(AutocompleterBase):
         if len(keys) > 0:
             REDIS.unlink(*keys)
 
-    def suggest(self, term, facets=[]):
+    def suggest(self, term, facets=[], *, strict=True):
         """
         Suggest matching objects, given a term
         """
@@ -778,24 +778,28 @@ class Autocompleter(AutocompleterBase):
                         continue
 
                     facet_list = facet_group["facets"]
-                    facet_group_keys_set = set([sub_facet["key"] for sub_facet in facet_list])
                     if facet_type == "and":
+                        facet_group_keys_set = set([sub_facet["key"] for sub_facet in facet_list])
                         if not facet_group_keys_set.issubset(provider_keys_set):
                             # AND requires all conditions to hold; if the provider can't evaluate
-                            # every key, the group is unsatisfiable — force empty results.
-                            empty_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
-                            facet_result_keys.append(empty_key)
-                            keys_to_delete.add(empty_key)
-                            facets_used = True
+                            # every key, the group is unsatisfiable
+                            if strict:
+                                # force empty results if suggestion is strict
+                                empty_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
+                                facet_result_keys.append(empty_key)
+                                keys_to_delete.add(empty_key)
+                                facets_used = True
                             continue
                     else:
                         facet_list = [f for f in facet_list if f["key"] in provider_keys_set]
                         if not facet_list:
-                            # OR with no evaluable keys is unsatisfiable — force empty results.
-                            empty_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
-                            facet_result_keys.append(empty_key)
-                            keys_to_delete.add(empty_key)
-                            facets_used = True
+                            # OR with no evaluable keys is unsatisfiable
+                            if strict:
+                                # force empty results if suggestion is strict
+                                empty_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
+                                facet_result_keys.append(empty_key)
+                                keys_to_delete.add(empty_key)
+                                facets_used = True
                             continue
 
                     facet_set_keys = []
