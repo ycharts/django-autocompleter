@@ -779,10 +779,24 @@ class Autocompleter(AutocompleterBase):
 
                     facet_list = facet_group["facets"]
                     facet_group_keys_set = set([sub_facet["key"] for sub_facet in facet_list])
-                    if not facet_group_keys_set.issubset(provider_keys_set):
-                        # For a given facet_group, if the provider does not support all the facet keys, then we can't
-                        # filter based on it, and we skip the facet_group
-                        continue
+                    if facet_type == "and":
+                        if not facet_group_keys_set.issubset(provider_keys_set):
+                            # AND requires all conditions to hold; if the provider can't evaluate
+                            # every key, the group is unsatisfiable — force empty results.
+                            empty_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
+                            facet_result_keys.append(empty_key)
+                            keys_to_delete.add(empty_key)
+                            facets_used = True
+                            continue
+                    else:
+                        facet_list = [f for f in facet_list if f["key"] in provider_keys_set]
+                        if not facet_list:
+                            # OR with no evaluable keys is unsatisfiable — force empty results.
+                            empty_key = RESULT_SET_BASE_NAME % str(uuid.uuid4())
+                            facet_result_keys.append(empty_key)
+                            keys_to_delete.add(empty_key)
+                            facets_used = True
+                            continue
 
                     facet_set_keys = []
                     for facet_dict in facet_list:
