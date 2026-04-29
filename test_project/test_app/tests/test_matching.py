@@ -695,6 +695,61 @@ class FacetMatchingTestCase(AutocompleterTestCase):
         # but AND groups require sector=Energy — sector conflict → 0
         self.assertEqual(len(matches), 0)
 
+    def test_or_group_with_partial_keys_applies_supported_only(self):
+        """
+        OR group with one unsupported key drops that key and applies the remaining supported keys
+        """
+        facets_partial = [
+            {
+                "type": "or",
+                "facets": [
+                    {"key": "sector", "value": "Energy"},
+                    {"key": "fake_key", "value": "anything"},
+                ],
+            }
+        ]
+        facets_full = [
+            {
+                "type": "or",
+                "facets": [{"key": "sector", "value": "Energy"}],
+            }
+        ]
+        partial_matches = self.autocomp.suggest("a", facets=facets_partial)
+        full_matches = self.autocomp.suggest("a", facets=facets_full)
+        self.assertEqual(partial_matches, full_matches)
+
+    def test_and_group_with_unsupported_key_returns_empty(self):
+        """
+        AND group containing an unsupported key is unsatisfiable — returns empty results
+        """
+        facets = [
+            {
+                "type": "and",
+                "facets": [
+                    {"key": "sector", "value": "Energy"},
+                    {"key": "fake_key", "value": "anything"},
+                ],
+            }
+        ]
+        matches = self.autocomp.suggest("a", facets=facets)
+        self.assertEqual(len(matches), 0)
+
+    def test_or_group_with_all_unsupported_keys_returns_empty(self):
+        """
+        OR group where every key is unsupported is unsatisfiable — returns empty results
+        """
+        facets = [
+            {
+                "type": "or",
+                "facets": [
+                    {"key": "fake_key", "value": "anything"},
+                    {"key": "other_fake", "value": "whatever"},
+                ],
+            }
+        ]
+        matches = self.autocomp.suggest("a", facets=facets)
+        self.assertEqual(len(matches), 0)
+
 
 class MixedFacetProvidersMatchingTestCase(AutocompleterTestCase):
     fixtures = ["stock_test_data_small.json", "indicator_test_data_small.json"]
@@ -728,5 +783,39 @@ class MixedFacetProvidersMatchingTestCase(AutocompleterTestCase):
         # the indicator provider supports no facet keys; the AND group is unsatisfiable → empty
         self.assertEqual(len(matches["ind"]), 16)
         self.assertEqual(len(facet_matches["ind"]), 0)
+
+        registry.del_autocompleter_setting("facet_stock_no_facet_ind", "MAX_RESULTS")
+
+    def test_mixed_providers_partial_or_facet_applies_to_supporting_provider(self):
+        """
+        OR group with one unsupported key: supporting provider filters by remaining keys;
+        non-supporting provider (no facets) gets empty results (all OR keys unsupported → unsatisfiable)
+        """
+        registry.set_autocompleter_setting(
+            "facet_stock_no_facet_ind", "MAX_RESULTS", 100
+        )
+        facets = [
+            {
+                "type": "or",
+                "facets": [
+                    {"key": "sector", "value": "Financial Services"},
+                    {"key": "fake_key", "value": "anything"},
+                ],
+            }
+        ]
+        facets_sector_only = [
+            {
+                "type": "or",
+                "facets": [{"key": "sector", "value": "Financial Services"}],
+            }
+        ]
+        matches = self.autocomp.suggest("a", facets=facets)
+        matches_sector_only = self.autocomp.suggest("a", facets=facets_sector_only)
+
+        # stock provider: fake_key dropped, sector=Financial Services applied — same as sector-only
+        self.assertEqual(matches["faceted_stock"], matches_sector_only["faceted_stock"])
+
+        # indicator provider: supports no facets → all OR keys unsupported → empty
+        self.assertEqual(len(matches["ind"]), 0)
 
         registry.del_autocompleter_setting("facet_stock_no_facet_ind", "MAX_RESULTS")
