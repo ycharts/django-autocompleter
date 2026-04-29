@@ -55,3 +55,6 @@ MAX_EXACT_MATCH_WORDS = getattr(settings, "AUTOCOMPLETER_MAX_EXACT_MATCH_WORDS",
 
 # Minimum number of letters required to start returning results
 MIN_LETTERS = getattr(settings, "AUTOCOMPLETER_MIN_LETTERS", 1)
+
+# Regex search term must match to return results
+TERM_REGEX = getattr(settings, "TERM_REGEX", None)

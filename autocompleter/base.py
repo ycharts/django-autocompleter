@@ -1,6 +1,7 @@
 import itertools
 import json
 import logging
+import re
 import uuid
 from collections import OrderedDict
 from hashlib import sha1
@@ -740,6 +741,13 @@ class Autocompleter(AutocompleterBase):
                 self.name, provider, "MIN_LETTERS"
             )
             if len(term) < MIN_LETTERS:
+                continue
+
+            # If the term doesn't match TERM_REGEX, don't search the provider for this term
+            TERM_REGEX = registry.get_ac_provider_setting(
+                self.name, provider, "TERM_REGEX"
+            )
+            if TERM_REGEX is not None and not re.match(TERM_REGEX, term):
                 continue
 
             term_result_keys = []
