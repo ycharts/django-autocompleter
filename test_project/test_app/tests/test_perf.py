@@ -4,6 +4,7 @@
 from test_app.tests.base import AutocompleterTestCase
 from autocompleter import Autocompleter
 from autocompleter import settings as auto_settings
+from test_app.autocompleters import StockAutocompleteProvider, IndicatorAutocompleteProvider, CalcAutocompleteProvider
 
 
 class MultiMatchingPerfTestCase(AutocompleterTestCase):
@@ -13,10 +14,10 @@ class MultiMatchingPerfTestCase(AutocompleterTestCase):
     def setUp(self):
         super(MultiMatchingPerfTestCase, self).setUp()
         self.autocomp = Autocompleter("mixed")
-        self.autocomp.store_all()
+        self.store_all_for_ac("mixed")
 
     def tearDown(self):
-        self.autocomp.remove_all()
+        self.remove_all_for_ac("mixed")
 
     def test_repeated_matches(self):
         """
