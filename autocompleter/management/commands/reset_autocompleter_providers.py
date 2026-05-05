@@ -49,11 +49,7 @@ class Command(BaseCommand):
 
         input_provider_names = [name.strip() for name in options["autocompleter_providers"].split(",")]
 
-        provider_name_to_provider = {
-            provider.get_provider_name(): provider
-            for providers in registry._providers_by_ac.values()
-            for provider in providers
-        }
+        provider_name_to_provider = registry._providers_by_provider_name
 
         missing = [n for n in input_provider_names if n not in provider_name_to_provider]
         if missing:
