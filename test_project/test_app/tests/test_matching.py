@@ -756,3 +756,20 @@ class ListFacetUpdateProviderTestCase(AutocompleterTestCase):
 
         matches_after_update = self.autocomp.suggest("rev", facets=facets)
         self.assertEqual(matches_after_store, matches_after_update)
+
+
+class TupleFacetNormalizationTestCase(AutocompleterTestCase):
+    def setUp(self):
+        super().setUp()
+        self.autocomp = Autocompleter("tuple_faceted_metric")
+        self.store_all_for_ac("tuple_faceted_metric")
+
+    def test_tuple_facet_value_normalized_to_list(self):
+        """
+        get_facets_dict() must convert tuple facet values to lists so that
+        suggest() callers don't need to know the original type from get_data().
+        """
+        facets = [{"type": "or", "facets": [{"key": "categories", "value": ["finance", "metric"]}]}]
+
+        matches = self.autocomp.suggest("rev", facets=facets)
+        self.assertGreater(len(matches), 0)
