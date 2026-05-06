@@ -733,3 +733,26 @@ class MixedFacetProvidersMatchingTestCase(AutocompleterTestCase):
         self.assertEqual(len(matches["ind"]), len(facet_matches["ind"]))
 
         registry.del_autocompleter_setting("facet_stock_no_facet_ind", "MAX_RESULTS")
+
+
+class ListFacetUpdateProviderTestCase(AutocompleterTestCase):
+    def setUp(self):
+        super().setUp()
+        self.autocomp = Autocompleter("list_faceted_metric")
+        self.store_all_for_ac("list_faceted_metric")
+
+    def test_update_provider_writes_list_repr_facet_keys(self):
+        """
+        update_provider must write the same facet key format as store() so that
+        suggest() can find the results after a bulk update.
+        """
+        facets = [{"type": "or", "facets": [{"key": "categories", "value": ["finance", "metric"]}]}]
+
+        matches_after_store = self.autocomp.suggest("rev", facets=facets)
+        self.assertGreater(len(matches_after_store), 0)
+
+        self.remove_all_for_ac("list_faceted_metric")
+        self.update_all_for_ac("list_faceted_metric")
+
+        matches_after_update = self.autocomp.suggest("rev", facets=facets)
+        self.assertEqual(matches_after_store, matches_after_update)
