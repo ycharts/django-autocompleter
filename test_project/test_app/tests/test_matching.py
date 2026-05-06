@@ -733,3 +733,57 @@ class MixedFacetProvidersMatchingTestCase(AutocompleterTestCase):
         self.assertEqual(len(matches["ind"]), len(facet_matches["ind"]))
 
         registry.del_autocompleter_setting("facet_stock_no_facet_ind", "MAX_RESULTS")
+
+
+class ListFacetUpdateProviderTestCase(AutocompleterTestCase):
+    def setUp(self):
+        super().setUp()
+        self.autocomp = Autocompleter("list_faceted_metric")
+        self.autocomp.store_all()
+
+    def test_update_provider_writes_list_repr_facet_keys(self):
+        """
+        update_provider must write the same facet key format as store() so that
+        suggest() can find the results after a bulk update.
+        """
+        facets = [{"type": "or", "facets": [{"key": "categories", "value": ["finance", "metric"]}]}]
+
+        matches_after_store = self.autocomp.suggest("rev", facets=facets)
+        self.assertGreater(len(matches_after_store), 0)
+
+        self.autocomp.remove_all()
+        self.autocomp.update_all()
+
+        matches_after_update = self.autocomp.suggest("rev", facets=facets)
+        self.assertEqual(matches_after_store, matches_after_update)
+
+
+class TupleFacetUpdateTestCase(AutocompleterTestCase):
+    def setUp(self):
+        super().setUp()
+        self.autocomp = Autocompleter("tuple_faceted_metric")
+        self.autocomp.store_all()
+
+    def test_tuple_facet_value_normalized_to_list(self):
+        """
+        get_facets_dict() must convert tuple facet values to lists so that
+        suggest() callers don't need to know the original type from get_data().
+        """
+        facets = [{"type": "or", "facets": [{"key": "categories", "value": ["finance", "metric"]}]}]
+
+        matches = self.autocomp.suggest("rev", facets=facets)
+        self.assertGreater(len(matches), 0)
+
+    def test_update_provider_with_tuple_facet_value(self):
+        """
+        update_provider must produce the same list-repr facet keys as store() even when
+        get_data() returns tuple values, relying on get_facets_dict() normalization
+        and the tuple→list reversal in the update_provider loops.
+        """
+        facets = [{"type": "or", "facets": [{"key": "categories", "value": ["finance", "metric"]}]}]
+
+        self.autocomp.remove_all()
+        self.autocomp.update_all()
+
+        matches = self.autocomp.suggest("rev", facets=facets)
+        self.assertGreater(len(matches), 0)
