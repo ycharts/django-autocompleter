@@ -331,7 +331,11 @@ class AutocompleterProviderBase(AutocompleterBase):
         data = self.get_data()
         for facet in self.get_facets():
             try:
-                facet_dicts.append({"key": facet, "value": data[facet]})
+                # normalize collections into lists
+                value = data[facet]
+                if isinstance(value, tuple):
+                    value = list(value)
+                facet_dicts.append({"key": facet, "value": value})
             except KeyError:
                 pass
         return facet_dicts
