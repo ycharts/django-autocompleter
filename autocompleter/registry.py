@@ -12,7 +12,6 @@ class AutocompleterRegistry(object):
         self._ac_provider_settings = OrderedDict()
         self._providers_by_ac = OrderedDict()
         self._providers_by_model = OrderedDict()
-        self._providers_by_provider_name = OrderedDict()
 
     def register(self, ac_name, provider, ac_provider_settings=None):
         """
@@ -33,8 +32,6 @@ class AutocompleterRegistry(object):
 
         if provider not in self._providers_by_ac[ac_name]:
             self._providers_by_ac[ac_name].append(provider)
-
-        self._providers_by_provider_name[provider.get_provider_name()] = provider
 
         combined_name = "%s%s" % (
             ac_name,
@@ -64,10 +61,6 @@ class AutocompleterRegistry(object):
                 and provider in self._providers_by_model[provider.model]
             ):
                 self._providers_by_model[provider.model].remove(provider)
-
-        provider_name = provider.get_provider_name()
-        if provider_name in self._providers_by_provider_name:
-            del self._providers_by_provider_name[provider_name]
 
         combined_name = "%s%s" % (
             ac_name,

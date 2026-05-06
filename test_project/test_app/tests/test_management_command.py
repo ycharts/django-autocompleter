@@ -3,11 +3,11 @@ from django.test import TestCase
 
 
 class ManagementCommandTestCase(TestCase):
-    def test_reset_autocompleter_providers_callable(self):
+    def test_autocompleter_init_calleable(self):
         """
-        Can call reset_autocompleter_providers without any error
+        Can call autocompleter_init without any error
         """
         try:
-            call_command("reset_autocompleter_providers", autocompleter_providers="stock")
+            call_command("autocompleter_init")
         except Exception:
-            self.fail("Calling reset_autocompleter_providers has raised an exception unexpectedly")
+            self.fail("Calling autocompleter_init has raised an exception unexpectedly")

@@ -3,8 +3,6 @@ from django.conf import settings
 from django.core import management
 from django.test import TestCase
 
-from autocompleter import registry
-
 
 class AutocompleterTestCase(TestCase):
     def setUp(self):
@@ -31,18 +29,3 @@ class AutocompleterTestCase(TestCase):
     def chunk_list(lst, chunk_size):
         for i in range(0, len(lst), chunk_size):
             yield lst[i : i + chunk_size]
-
-    @staticmethod
-    def store_all_for_ac(ac_name):
-        for provider_class in registry.get_all_by_autocompleter(ac_name) or []:
-            provider_class.store_all()
-
-    @staticmethod
-    def remove_all_for_ac(ac_name):
-        for provider_class in registry.get_all_by_autocompleter(ac_name) or []:
-            provider_class.remove_all()
-
-    @staticmethod
-    def update_all_for_ac(ac_name):
-        for provider_class in registry.get_all_by_autocompleter(ac_name) or []:
-            provider_class.update_all()

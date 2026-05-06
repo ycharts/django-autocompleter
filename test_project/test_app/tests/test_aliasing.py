@@ -1,7 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-from test_app.autocompleters import IndicatorAliasedAutocompleteProvider, CalcAliasedAutocompleteProvider
 from test_app.tests.base import AutocompleterTestCase
 from autocompleter import Autocompleter, registry
 
@@ -12,10 +11,10 @@ class IndicatorAliasedMatchTestCase(AutocompleterTestCase):
     def setUp(self):
         super(IndicatorAliasedMatchTestCase, self).setUp()
         self.autocomp = Autocompleter("indicator_aliased")
-        self.store_all_for_ac("indicator_aliased")
+        self.autocomp.store_all()
 
     def tearDown(self):
-        self.remove_all_for_ac("indicator_aliased")
+        self.autocomp.remove_all()
 
     def test_basic_aliasing(self):
         """
@@ -73,10 +72,10 @@ class CalcAutocompleteProviderTestCase(AutocompleterTestCase):
     def setUp(self):
         super(CalcAutocompleteProviderTestCase, self).setUp()
         self.autocomp = Autocompleter("metric_aliased")
-        self.store_all_for_ac("metric_aliased")
+        self.autocomp.store_all()
 
     def tearDown(self):
-        self.remove_all_for_ac("metric_aliased")
+        self.autocomp.remove_all()
 
     def test_one_way_alias_list_creation(self):
         """
