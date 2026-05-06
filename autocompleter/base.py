@@ -1416,22 +1416,23 @@ class Autocompleter(AutocompleterBase):
                 if obj_id in objs_with_updated_scores
                 else live_obj_facets - db_obj_facets
             )
-            for facet in facets_live_map.get(obj_id, []):
-                hashable_facet = (facet["key"], cls._hashable_value(facet["value"]))
-                if hashable_facet in facets_to_add:
-                    facet_sorted_set_key = FACET_SET_BASE_NAME % (
-                        provider_name, facet["key"], facet["value"]
-                    )
-                    pipe.zadd(facet_sorted_set_key, {obj_id: scores_live_map[obj_id]})
+            for key, value in facets_to_add:
+                # `get_facets_dict` normalizes all sequence values to lists,
+                # and `_hashable_value` converts list to tuples for frozenset storage;
+                # so any tuple here was a list originally
+                value = list(value) if isinstance(value, tuple) else value
+                facet_sorted_set_key = FACET_SET_BASE_NAME % (provider_name, key, value)
+                pipe.zadd(facet_sorted_set_key, {obj_id: scores_live_map[obj_id]})
             self.log.info(f"Added {len(facets_to_add)} entries to {FACET_BASE_NAME}")
+
             facets_to_remove = db_obj_facets - live_obj_facets
-            for facet in facets_db_map.get(obj_id, []):
-                hashable_facet = (facet["key"], cls._hashable_value(facet["value"]))
-                if hashable_facet in facets_to_remove:
-                    facet_sorted_set_key = FACET_SET_BASE_NAME % (
-                        provider_name, facet["key"], facet["value"]
-                    )
-                    pipe.zrem(facet_sorted_set_key, obj_id)
+            for key, value in facets_to_remove:
+                # `get_facets_dict` normalizes all sequence values to lists,
+                # and `_hashable_value` converts list to tuples for frozenset storage;
+                # so any tuple here was a list originally
+                value = list(value) if isinstance(value, tuple) else value
+                facet_sorted_set_key = FACET_SET_BASE_NAME % (provider_name, key, value)
+                pipe.zrem(facet_sorted_set_key, obj_id)
             self.log.info(
                 f"Removed {len(facets_to_remove)} entries to {FACET_SET_BASE_NAME}"
             )

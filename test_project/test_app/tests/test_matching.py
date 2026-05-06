@@ -758,7 +758,7 @@ class ListFacetUpdateProviderTestCase(AutocompleterTestCase):
         self.assertEqual(matches_after_store, matches_after_update)
 
 
-class TupleFacetNormalizationTestCase(AutocompleterTestCase):
+class TupleFacetUpdateTestCase(AutocompleterTestCase):
     def setUp(self):
         super().setUp()
         self.autocomp = Autocompleter("tuple_faceted_metric")
@@ -770,6 +770,20 @@ class TupleFacetNormalizationTestCase(AutocompleterTestCase):
         suggest() callers don't need to know the original type from get_data().
         """
         facets = [{"type": "or", "facets": [{"key": "categories", "value": ["finance", "metric"]}]}]
+
+        matches = self.autocomp.suggest("rev", facets=facets)
+        self.assertGreater(len(matches), 0)
+
+    def test_update_provider_with_tuple_facet_value(self):
+        """
+        update_provider must produce the same list-repr facet keys as store() even when
+        get_data() returns tuple values, relying on get_facets_dict() normalization
+        and the tuple→list reversal in the update_provider loops.
+        """
+        facets = [{"type": "or", "facets": [{"key": "categories", "value": ["finance", "metric"]}]}]
+
+        self.remove_all_for_ac("tuple_faceted_metric")
+        self.update_all_for_ac("tuple_faceted_metric")
 
         matches = self.autocomp.suggest("rev", facets=facets)
         self.assertGreater(len(matches), 0)
