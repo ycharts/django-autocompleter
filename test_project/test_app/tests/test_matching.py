@@ -738,7 +738,7 @@ class ListFacetUpdateProviderTestCase(AutocompleterTestCase):
     def setUp(self):
         super().setUp()
         self.autocomp = Autocompleter("list_faceted_metric")
-        self.autocomp.store_all()
+        self.store_all_for_ac("list_faceted_metric")
 
     def test_update_provider_writes_list_repr_facet_keys(self):
         """
@@ -750,8 +750,8 @@ class ListFacetUpdateProviderTestCase(AutocompleterTestCase):
         matches_after_store = self.autocomp.suggest("rev", facets=facets)
         self.assertGreater(len(matches_after_store), 0)
 
-        self.autocomp.remove_all()
-        self.autocomp.update_all()
+        self.remove_all_for_ac("list_faceted_metric")
+        self.update_all_for_ac("list_faceted_metric")
 
         matches_after_update = self.autocomp.suggest("rev", facets=facets)
         self.assertEqual(matches_after_store, matches_after_update)
@@ -761,7 +761,7 @@ class TupleFacetUpdateTestCase(AutocompleterTestCase):
     def setUp(self):
         super().setUp()
         self.autocomp = Autocompleter("tuple_faceted_metric")
-        self.autocomp.store_all()
+        self.store_all_for_ac("tuple_faceted_metric")
 
     def test_tuple_facet_value_normalized_to_list(self):
         """
@@ -781,8 +781,8 @@ class TupleFacetUpdateTestCase(AutocompleterTestCase):
         """
         facets = [{"type": "or", "facets": [{"key": "categories", "value": ["finance", "metric"]}]}]
 
-        self.autocomp.remove_all()
-        self.autocomp.update_all()
+        self.remove_all_for_ac("tuple_faceted_metric")
+        self.update_all_for_ac("tuple_faceted_metric")
 
         matches = self.autocomp.suggest("rev", facets=facets)
         self.assertGreater(len(matches), 0)
