@@ -451,11 +451,16 @@ class FacetMatchingTestCase(AutocompleterTestCase):
                 ],
             }
         ]
-        facet_matches = self.autocomp.suggest("a", facets=facets)
         regular_matches = self.autocomp.suggest("a")
         # since the 'thisisfake' key does not exist in our provider, the results for a facet
-        # suggest should be the same as a regular suggest
+        # suggest should be the same as a regular suggest if strict=False
+        facet_matches = self.autocomp.suggest("a", facets=facets, strict=False)
         self.assertEqual(facet_matches, regular_matches)
+
+        # if strict=True, the AND group with an unsupported key is unsatisfiable, so provider returns empty results
+        strict_facet_matches = self.autocomp.suggest("a", facets=facets)
+        self.assertEqual(len(strict_facet_matches), 0)
+
 
     def test_provider_keys_is_subset_of_facet_keys_no_match(self):
         """
@@ -674,10 +679,12 @@ class FacetMatchingTestCase(AutocompleterTestCase):
         }
         all_facets = facets + [extra_facet]
 
-        regular_matches = self.autocomp.suggest("ch", facets=facets)
-        matches = self.autocomp.suggest("ch", facets=all_facets)
-        self.assertEqual(len(matches), 1)
-        self.assertEqual(regular_matches, matches)
+        # both strict and lenient search suggestions will filter results out,
+        # since we ignore `fake_key` facet but still apply `sector` facet in the `extra_facet` group
+        matches = self.autocomp.suggest("ch", facets=all_facets, strict=False)
+        strict_matches = self.autocomp.suggest("ch", facets=all_facets)
+        self.assertEqual(len(matches), 0)
+        self.assertEqual(len(strict_matches), 0)
 
         facets = [
             {"type": "and", "facets": [{"key": "sector", "value": "Energy"}]},
@@ -691,10 +698,102 @@ class FacetMatchingTestCase(AutocompleterTestCase):
             "facets": [{"key": "fake_key", "value": "fake value"}, {"key": "sector", "value": "Communication Services"}],
         }
         all_facets = facets + [extra_facet]
-        regular_matches = self.autocomp.suggest("ch", facets=facets)
-        matches = self.autocomp.suggest("ch", facets=all_facets)
-        self.assertEqual(len(matches), 2)
-        self.assertEqual(regular_matches, matches)
+
+        # both strict and lenient search suggestions will filter results out,
+        # since we ignore `fake_key` facet but still apply `sector` facet in the `extra_facet` group
+        matches = self.autocomp.suggest("ch", facets=all_facets, strict=False)
+        strict_matches = self.autocomp.suggest("ch", facets=all_facets)
+        self.assertEqual(len(matches), 0)
+        self.assertEqual(len(strict_matches), 0)
+
+    def test_or_group_with_partial_keys_applies_supported_only(self):
+        """
+        OR group with one unsupported key drops that key and applies the remaining supported keys
+        """
+        facets_partial = [
+            {
+                "type": "or",
+                "facets": [
+                    {"key": "sector", "value": "Energy"},
+                    {"key": "fake_key", "value": "anything"},
+                ],
+            }
+        ]
+        facets_full = [
+            {
+                "type": "or",
+                "facets": [{"key": "sector", "value": "Energy"}],
+            }
+        ]
+        partial_matches = self.autocomp.suggest("a", facets=facets_partial)
+        full_matches = self.autocomp.suggest("a", facets=facets_full)
+        self.assertEqual(partial_matches, full_matches)
+
+    def test_and_group_with_unsupported_key_returns_empty(self):
+        """
+        AND group containing an unsupported key is unsatisfiable — returns empty results
+        """
+        facets = [
+            {
+                "type": "and",
+                "facets": [
+                    {"key": "sector", "value": "Energy"},
+                    {"key": "fake_key", "value": "anything"},
+                ],
+            }
+        ]
+        matches = self.autocomp.suggest("a", facets=facets)
+        self.assertEqual(len(matches), 0)
+
+    def test_or_group_with_all_unsupported_keys_returns_empty(self):
+        """
+        OR group where every key is unsupported is unsatisfiable — returns empty results
+        """
+        facets = [
+            {
+                "type": "or",
+                "facets": [
+                    {"key": "fake_key", "value": "anything"},
+                    {"key": "other_fake", "value": "whatever"},
+                ],
+            }
+        ]
+        matches = self.autocomp.suggest("a", facets=facets)
+        self.assertEqual(len(matches), 0)
+
+    def test_and_group_with_unsupported_key_lenient_returns_unfiltered(self):
+        """
+        AND facets group with unsupported key is skipped if strict=False, returns unfiltered results
+        """
+        facets = [
+            {
+                "type": "and",
+                "facets": [
+                    {"key": "sector", "value": "Energy"},
+                    {"key": "fake_key", "value": "anything"},
+                ],
+            }
+        ]
+        facet_matches = self.autocomp.suggest("a", facets=facets, strict=False)
+        regular_matches = self.autocomp.suggest("a")
+        self.assertEqual(facet_matches, regular_matches)
+
+    def test_or_group_with_all_unsupported_keys_lenient_returns_unfiltered(self):
+        """
+        OR group with all unsupported keys is skipped if strict=False, returns unfiltered results
+        """
+        facets = [
+            {
+                "type": "or",
+                "facets": [
+                    {"key": "fake_key", "value": "anything"},
+                    {"key": "other_fake", "value": "whatever"},
+                ],
+            }
+        ]
+        facet_matches = self.autocomp.suggest("a", facets=facets, strict=False)
+        regular_matches = self.autocomp.suggest("a")
+        self.assertEqual(facet_matches, regular_matches)
 
 
 class MixedFacetProvidersMatchingTestCase(AutocompleterTestCase):
@@ -719,7 +818,8 @@ class MixedFacetProvidersMatchingTestCase(AutocompleterTestCase):
             }
         ]
         matches = self.autocomp.suggest("a")
-        facet_matches = self.autocomp.suggest("a", facets=facets)
+        facet_matches = self.autocomp.suggest("a", facets=facets, strict=False)
+        strict_facet_matches = self.autocomp.suggest("a", facets=facets)
 
         # because we are using the faceted stock provider in the 'facet_stock_no_facet_ind' AC,
         # we expect using facets will decrease the amount of results when searching.
@@ -727,9 +827,70 @@ class MixedFacetProvidersMatchingTestCase(AutocompleterTestCase):
         self.assertEqual(len(facet_matches["faceted_stock"]), 2)
 
         # since the indicator provider does not support facets,
-        # we expect the search results from both a facet and non-facet search to be the same.
+        # we expect the search results from both a facet and non-facet search to be the same if strict=False
         self.assertEqual(len(matches["ind"]), 16)
         self.assertEqual(len(matches["ind"]), len(facet_matches["ind"]))
+
+        # if we use strict search suggestions, indicators will be filtered out
+        self.assertEqual(len(strict_facet_matches["ind"]), 0)
+
+        registry.del_autocompleter_setting("facet_stock_no_facet_ind", "MAX_RESULTS")
+
+    def test_mixed_providers_partial_or_facet_applies_to_supporting_provider(self):
+        """
+        OR group with one unsupported key: supporting provider filters by remaining keys;
+        non-supporting provider (no facets) gets empty results (all OR keys unsupported → unsatisfiable)
+        """
+        registry.set_autocompleter_setting(
+            "facet_stock_no_facet_ind", "MAX_RESULTS", 100
+        )
+        facets = [
+            {
+                "type": "or",
+                "facets": [
+                    {"key": "sector", "value": "Financial Services"},
+                    {"key": "fake_key", "value": "anything"},
+                ],
+            }
+        ]
+        facets_sector_only = [
+            {
+                "type": "or",
+                "facets": [{"key": "sector", "value": "Financial Services"}],
+            }
+        ]
+        matches = self.autocomp.suggest("a", facets=facets)
+        matches_sector_only = self.autocomp.suggest("a", facets=facets_sector_only)
+
+        # stock provider: fake_key dropped, sector=Financial Services applied — same as sector-only
+        self.assertEqual(matches["faceted_stock"], matches_sector_only["faceted_stock"])
+
+        # indicator provider: supports no facets → all OR keys unsupported → empty
+        self.assertEqual(len(matches["ind"]), 0)
+
+        registry.del_autocompleter_setting("facet_stock_no_facet_ind", "MAX_RESULTS")
+
+    def test_non_facet_provider_lenient_returns_unfiltered(self):
+        """
+        non-facet provider skips unsatisfiable AND group if strict=False, returns unfiltered results
+        """
+        registry.set_autocompleter_setting(
+            "facet_stock_no_facet_ind", "MAX_RESULTS", 100
+        )
+        facets = [
+            {
+                "type": "and",
+                "facets": [{"key": "sector", "value": "Financial Services"}],
+            }
+        ]
+        matches = self.autocomp.suggest("a")
+        facet_matches = self.autocomp.suggest("a", facets=facets, strict=False)
+
+        # stock provider still filters normally
+        self.assertEqual(len(facet_matches["faceted_stock"]), 2)
+
+        # indicator provider: AND group skipped (lenient) → same results as unfiltered
+        self.assertEqual(len(facet_matches["ind"]), len(matches["ind"]))
 
         registry.del_autocompleter_setting("facet_stock_no_facet_ind", "MAX_RESULTS")
 
