@@ -93,11 +93,11 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         """
         autocomp = Autocompleter("stock")
 
-        autocomp.store_all()
+        StockAutocompleteProvider.store_all()
         keys = self.redis.hkeys("djac.test.stock")
         self.assertEqual(len(keys), 104)
 
-        autocomp.remove_all()
+        StockAutocompleteProvider.remove_all()
         keys = self.redis.keys("djac.test.stock*")
         self.assertEqual(len(keys), 0)
 
@@ -108,7 +108,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         signal_registry.register(Indicator)
 
         autocomp = Autocompleter("indicator")
-        autocomp.store_all()
+        self.store_all_for_ac("indicator")
 
         unemployment = Indicator.objects.get(internal_name="unemployment_rate")
 
@@ -118,7 +118,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         self.assertTrue(autocomp.suggest("free parking")[0]["id"] == 1)
         self.assertTrue(len(autocomp.suggest("US Unemployment Rate")) == 0)
 
-        autocomp.remove_all()
+        self.remove_all_for_ac("indicator")
         signal_registry.unregister(Indicator)
 
     def test_removal_when_no_longer_passing_inclusion_test(self):
@@ -128,7 +128,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         signal_registry.register(Indicator)
 
         autocomp = Autocompleter("indicator_selective")
-        autocomp.store_all()
+        self.store_all_for_ac("indicator_selective")
 
         unemployment = Indicator.objects.get(internal_name="unemployment_rate")
 
@@ -144,7 +144,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         self.assertTrue(len(autocomp.suggest("free parking")) == 0)
         self.assertTrue(len(autocomp.suggest("US Unemployment Rate")) == 0)
 
-        autocomp.remove_all()
+        self.remove_all_for_ac("indicator_selective")
         signal_registry.unregister(Indicator)
 
     def test_dict_store_and_remove_all_basic(self):
@@ -153,78 +153,19 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         """
         autocomp = Autocompleter("metric")
 
-        autocomp.store_all()
+        CalcAutocompleteProvider.store_all()
         keys = self.redis.hkeys("djac.test.metric")
         self.assertEqual(len(keys), 8)
 
-        autocomp.remove_all()
+        CalcAutocompleteProvider.remove_all()
         keys = self.redis.keys("djac.test.metric")
         self.assertEqual(len(keys), 0)
-
-    def test_store_and_remove_all_basic_with_caching(self):
-        """
-        Storing and removing items all at once works with caching turned on
-        """
-        # Let's turn on caching because that will store things in Redis and we want to make
-        # sure we clean them up.
-        setattr(auto_settings, "CACHE_TIMEOUT", 3600)
-
-        autocomp = Autocompleter("stock")
-        autocomp.store_all()
-
-        keys = self.redis.hkeys("djac.test.stock")
-        self.assertEqual(len(keys), 104)
-
-        autocomp = Autocompleter("stock")
-        for i in range(0, 3):
-            autocomp.suggest("a")
-            autocomp.suggest("z")
-            autocomp.exact_suggest("aapl")
-            autocomp.exact_suggest("xyz")
-
-        autocomp.remove_all()
-        keys = self.redis.keys("djac.test.stock*")
-        self.assertEqual(len(keys), 0)
-
-        # Must set the setting back to where it was as it will persist
-        setattr(auto_settings, "CACHE_TIMEOUT", 0)
-
-    def test_dict_store_and_remove_all_basic_with_caching(self):
-        """
-        Storing and removing items all at once works with caching turned on on dict ac
-        """
-        # Let's turn on caching because that will store things in Redis and we want to make
-        # sure we clean them up.
-        setattr(auto_settings, "CACHE_TIMEOUT", 3600)
-
-        autocomp = Autocompleter("metric")
-        autocomp.store_all()
-
-        keys = self.redis.hkeys("djac.test.metric")
-        self.assertEqual(len(keys), 8)
-
-        autocomp = Autocompleter("metric")
-        for i in range(0, 3):
-            autocomp.suggest("m")
-            autocomp.suggest("e")
-            autocomp.exact_suggest("PE Ratio TTM")
-            autocomp.exact_suggest("Market Cap")
-
-        autocomp.remove_all()
-
-        keys = self.redis.keys("djac.test.metric*")
-        self.assertEqual(len(keys), 0)
-
-        # Must set the setting back to where it was as it will persist
-        setattr(auto_settings, "CACHE_TIMEOUT", 0)
 
     def test_store_and_remove_all_multi(self):
         """
         Storing and removing items all at once works for a multi-model autocompleter.
         """
-        autocomp = Autocompleter("mixed")
-
-        autocomp.store_all()
+        self.store_all_for_ac("mixed")
         keys = self.redis.hkeys("djac.test.stock")
         self.assertEqual(len(keys), 104)
         keys = self.redis.hkeys("djac.test.ind")
@@ -232,7 +173,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         keys = self.redis.hkeys("djac.test.metric")
         self.assertEqual(len(keys), 8)
 
-        autocomp.remove_all()
+        self.remove_all_for_ac("mixed")
         keys = self.redis.keys("djac.test.stock*")
         self.assertEqual(len(keys), 0)
         keys = self.redis.keys("djac.test.ind*")
@@ -248,7 +189,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         """
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 2)
         autocomp = Autocompleter("stock")
-        autocomp.store_all()
+        self.store_all_for_ac("stock")
 
         autocomp.exact_suggest("aapl")
         keys = self.redis.keys("djac.results.*")
@@ -261,7 +202,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         After suggest call, all intermediate result sets are removed
         """
         autocomp = Autocompleter("stock")
-        autocomp.store_all()
+        self.store_all_for_ac("stock")
 
         autocomp.suggest("aapl")
         keys = self.redis.keys("djac.results.*")
@@ -423,8 +364,7 @@ class FacetedStoringAndRemovingTestCase(AutocompleterTestCase):
         """
         Calling store_all stores all facet data
         """
-        autocomp = Autocompleter("faceted_stock")
-        autocomp.store_all()
+        FacetedStockAutocompleteProvider.store_all()
         facet_set_name = base.FACET_SET_BASE_NAME % (
             "faceted_stock",
             "sector",
@@ -441,8 +381,7 @@ class FacetedStoringAndRemovingTestCase(AutocompleterTestCase):
         """
         Calling remove_all clears all facet data
         """
-        autocomp = Autocompleter("faceted_stock")
-        autocomp.store_all()
+        FacetedStockAutocompleteProvider.store_all()
         facet_set_name = base.FACET_SET_BASE_NAME % (
             "faceted_stock",
             "sector",
@@ -454,7 +393,7 @@ class FacetedStoringAndRemovingTestCase(AutocompleterTestCase):
         keys = self.redis.hkeys(facet_map_name)
         self.assertEqual(len(keys), 104)
 
-        autocomp.remove_all()
+        FacetedStockAutocompleteProvider.remove_all()
         set_length = self.redis.zcard(facet_set_name)
         self.assertEqual(set_length, 0)
         keys = self.redis.hkeys(facet_map_name)
@@ -469,16 +408,16 @@ class SelectiveStoringTestCase(AutocompleterTestCase):
         We can exclude certain objects from the autocompleter selectively.
         """
         autocomp = Autocompleter("indicator")
-        autocomp.store_all()
+        self.store_all_for_ac("indicator")
         matches = autocomp.suggest("us unemployment rate")
         self.assertEqual(len(matches), 1)
-        autocomp.remove_all()
+        self.remove_all_for_ac("indicator")
 
         autocomp = Autocompleter("indicator_selective")
-        autocomp.store_all()
+        self.store_all_for_ac("indicator_selective")
         matches = autocomp.suggest("us unemployment rate")
         self.assertEqual(len(matches), 0)
-        autocomp.remove_all()
+        self.remove_all_for_ac("indicator_selective")
 
 
 class SignalBasedStoringTestCase(AutocompleterTestCase):
@@ -727,14 +666,14 @@ class UpdateTestCase(AutocompleterTestCase):
         Updating an obj's data updates the relevant redis objects
         """
         autocomp = Autocompleter("faceted_stock")
-        autocomp.store_all()
+        FacetedStockAutocompleteProvider.store_all()
 
         # Change AAPL's sector to 'Food'
         aapl = Stock.objects.get(symbol="AAPL")
         aapl.sector = "Food"
         aapl.save()
 
-        autocomp.update_all(clear_cache=False)
+        FacetedStockAutocompleteProvider.update_all()
 
         provider = FacetedStockAutocompleteProvider(aapl)
         expected_data = provider.get_data()
@@ -751,7 +690,7 @@ class UpdateTestCase(AutocompleterTestCase):
         Updating an obj's facets updates the relevant redis objects
         """
         autocomp = Autocompleter("faceted_stock")
-        autocomp.store_all()
+        FacetedStockAutocompleteProvider.store_all()
 
         # Change AAPL's sector to 'Food'
         aapl = Stock.objects.get(symbol="AAPL")
@@ -764,7 +703,7 @@ class UpdateTestCase(AutocompleterTestCase):
             "get_facets",
             return_value=["sector", "search_name"],
         ):
-            autocomp.update_all(clear_cache=False)
+            FacetedStockAutocompleteProvider.update_all()
 
         provider_name = FacetedStockAutocompleteProvider.get_provider_name()
         facet_set_key = base.FACET_SET_BASE_NAME % (provider_name, "{}", "{}")
@@ -805,7 +744,7 @@ class UpdateTestCase(AutocompleterTestCase):
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
         autocomp = Autocompleter("indicator_aliased")
 
-        autocomp.store_all()
+        IndicatorAliasedAutocompleteProvider.store_all()
 
         provider_name = IndicatorAliasedAutocompleteProvider.get_provider_name()
 
@@ -820,7 +759,7 @@ class UpdateTestCase(AutocompleterTestCase):
             self.redis.hget(base.TERM_MAP_BASE_NAME % provider_name, unemployment.id)
         )
 
-        autocomp.update_all(clear_cache=False)
+        IndicatorAliasedAutocompleteProvider.update_all()
 
         # Verify that all new prefixes were added
         new_prefixes = [new_term[:x] for x in range(1, len(new_term) + 1)]
@@ -866,7 +805,7 @@ class UpdateTestCase(AutocompleterTestCase):
 
         # Store them all
         autocomp = Autocompleter("indicator_aliased")
-        autocomp.store_all()
+        IndicatorAliasedAutocompleteProvider.store_all()
 
         # Update the indicator's name to its original name
         unemployment = Indicator.objects.get(internal_name="unemployment_rate")
@@ -874,7 +813,7 @@ class UpdateTestCase(AutocompleterTestCase):
         unemployment.save()
 
         # Update the autocompleter
-        autocomp.update_all(clear_cache=False)
+        IndicatorAliasedAutocompleteProvider.update_all()
 
         provider_name = IndicatorAliasedAutocompleteProvider.get_provider_name()
         # Verify that all removed prefixes were deleted
@@ -901,7 +840,7 @@ class UpdateTestCase(AutocompleterTestCase):
         # Store all objects
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
         autocomp = Autocompleter("faceted_stock")
-        autocomp.store_all()
+        FacetedStockAutocompleteProvider.store_all()
 
         # Delete a stock
         aapl = Stock.objects.get(symbol="AAPL")
@@ -913,7 +852,7 @@ class UpdateTestCase(AutocompleterTestCase):
         terms = provider._get_norm_terms(provider.get_terms())
         facets = provider.get_facets_dict()
 
-        autocomp.update_all(clear_cache=False)
+        FacetedStockAutocompleteProvider.update_all()
 
         exact_map_key = base.EXACT_SET_BASE_NAME % provider_name
         # Verify that exact terms are no longer present
@@ -958,7 +897,7 @@ class UpdateTestCase(AutocompleterTestCase):
         """ """
         setattr(auto_settings, "MAX_EXACT_MATCH_WORDS", 10)
         autocomp = Autocompleter("faceted_stock")
-        autocomp.store_all()
+        FacetedStockAutocompleteProvider.store_all()
 
         # Change AAPL's score, which is mapped to its market_cap
         new_score = 42
@@ -972,7 +911,7 @@ class UpdateTestCase(AutocompleterTestCase):
         provider_name = provider.get_provider_name()
         obj_id = provider.get_item_id()
 
-        autocomp.update_all(clear_cache=False)
+        FacetedStockAutocompleteProvider.update_all()
 
         prefixes = []
         # New score updated in djac.test.faceted_stock.p.*
