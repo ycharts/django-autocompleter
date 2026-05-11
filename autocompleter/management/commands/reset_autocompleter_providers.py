@@ -68,8 +68,3 @@ class Command(BaseCommand):
             self.log.info("Storing all objects for %s" % log_target)
             for pc in provider_classes:
                 pc.store_all()
-
-        if options["update"]:
-            self.log.info("Updating all objects with updates for %s" % log_target)
-            for pc in provider_classes:
-                pc.update_all()
