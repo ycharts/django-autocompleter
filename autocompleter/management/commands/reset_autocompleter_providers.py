@@ -29,13 +29,6 @@ class Command(BaseCommand):
             dest="store",
             help="Store all data for the given autocompleter providers.",
         )
-        parser.add_argument(
-            "--update",
-            action="store_true",
-            default=False,
-            dest="update",
-            help="Updates all autocompleter data. Only processes objects that have been modified.",
-        )
 
     help = "Reset autocompleter provider data"
 
