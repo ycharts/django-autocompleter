@@ -62,7 +62,7 @@ def get_norm_term_variations(term):
             # So that every combination of replace x with '', y with '', x with ' ' y with '' etc is created.
             norm_term = replace_all(norm_term, replace=present_join_chars, with_this="")
             norm_term = norm_term.strip()
-            if norm_term != "" and norm_term not in norm_terms:
+            if norm_term != "":
                 norm_terms.add(norm_term)
     else:
         norm_term = get_normalized_term(term, []).strip()
