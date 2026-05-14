@@ -1001,15 +1001,17 @@ class Autocompleter(AutocompleterBase):
             return []
 
         # If we have a cached version of the search results available, return it!
-        hashed_facets = self.hash_facets(facets)
-        cache_key = CACHE_BASE_NAME % (
-            self.name,
-            self._get_cache_version(),
-            utils.get_normalized_term(term, settings.JOIN_CHARS),
-            hashed_facets,
-        )
-        if settings.CACHE_TIMEOUT and (cached := REDIS.get(cache_key)) is not None:
-            return self.__class__._deserialize_data(cached)
+        cache_key = None
+        if settings.CACHE_TIMEOUT:
+            cache_key = CACHE_BASE_NAME % (
+                self.name,
+                self._get_cache_version(),
+                utils.get_normalized_term(term, settings.JOIN_CHARS),
+                self.hash_facets(facets),
+            )
+            cached = REDIS.get(cache_key)
+            if cached is not None:
+                return self.__class__._deserialize_data(cached)
 
         # Get the normalized term variations we need to search for each term. A single term
         # could turn into multiple terms we need to search.
@@ -1314,13 +1316,16 @@ class Autocompleter(AutocompleterBase):
             return []
 
         # If we have a cached version of the search results available, return it!
-        cache_key = EXACT_CACHE_BASE_NAME % (
-            self.name,
-            self._get_cache_version(),
-            term,
-        )
-        if settings.CACHE_TIMEOUT and (cached := REDIS.get(cache_key)) is not None:
-            return self.__class__._deserialize_data(cached)
+        cache_key = None
+        if settings.CACHE_TIMEOUT:
+            cache_key = EXACT_CACHE_BASE_NAME % (
+                self.name,
+                self._get_cache_version(),
+                term,
+            )
+            cached = REDIS.get(cache_key)
+            if cached is not None:
+                return self.__class__._deserialize_data(cached)
         provider_results = OrderedDict()
 
         # Get the normalized we need to search for each term... A single term
