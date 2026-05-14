@@ -252,8 +252,7 @@ class TestNormalizedTerm(TestCase):
 class TestNormTermVariations(TestCase):
     def test_join_char_does_not_produce_dupe(self):
         """
-        A trailing join char like "p/" must not produce two variations "p" and "p "
-        instead of just one "p"
+        A trailing join char in a string, e.g. "p/", should just return "p" as opposed to "p" and "p "
         """
         variations = get_norm_term_variations("p/")
         self.assertEqual(variations, {"p"})
