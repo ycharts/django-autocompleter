@@ -250,12 +250,10 @@ class TestNormalizedTerm(TestCase):
 
 
 class TestNormTermVariations(TestCase):
-    def test_special_char_does_not_product_dupe(self):
+    def test_join_char_does_not_produce_dupe(self):
         """
-        A trailing join char like "p/" must not produce two "p" variants.
-        Without stripping, the join-char-as-space branch yields "p " while
-        the strip branch yields "p"; both reduce to the prefix word "p"
-        and cause duplicate prefix keys to be passed to ZUNIONSTORE.
+        A trailing join char like "p/" must not produce two variations "p" and "p "
+        instead of just one "p"
         """
         variations = get_norm_term_variations("p/")
         self.assertEqual(variations, {"p"})
