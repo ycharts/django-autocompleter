@@ -217,6 +217,54 @@ class CalcAliasedAutocompleteProvider(AutocompleterDictProvider):
         return calc_info.calc_dicts
 
 
+class ListFacetedCalcProvider(AutocompleterDictProvider):
+    obj_dict = calc_info.calc_dicts
+    provider_name = "lf_metric"
+
+    def get_item_id(self):
+        return self.obj["short_label"]
+
+    def get_term(self):
+        return self.obj["label"]
+
+    @classmethod
+    def get_facets(cls):
+        return ["categories"]
+
+    def get_data(self):
+        return {
+            "id": self.get_item_id(),
+            "score": 1,
+            "display_name": self.obj["label"],
+            "search_name": self.obj["short_label"],
+            "categories": ["finance", "metric"],
+        }
+
+
+class TupleFacetedCalcProvider(AutocompleterDictProvider):
+    obj_dict = calc_info.calc_dicts
+    provider_name = "tf_metric"
+
+    def get_item_id(self):
+        return self.obj["short_label"]
+
+    def get_term(self):
+        return self.obj["label"]
+
+    @classmethod
+    def get_facets(cls):
+        return ["categories"]
+
+    def get_data(self):
+        return {
+            "id": self.get_item_id(),
+            "score": 1,
+            "display_name": self.obj["label"],
+            "search_name": self.obj["short_label"],
+            "categories": ("finance", "metric"),
+        }
+
+
 registry.register("faceted_stock", FacetedStockAutocompleteProvider)
 registry.register("stock", StockAutocompleteProvider)
 registry.register("mixed", StockAutocompleteProvider)
@@ -233,3 +281,6 @@ registry.register("metric_aliased", CalcAliasedAutocompleteProvider)
 
 registry.register("facet_stock_no_facet_ind", FacetedStockAutocompleteProvider)
 registry.register("facet_stock_no_facet_ind", IndicatorAutocompleteProvider)
+
+registry.register("list_faceted_metric", ListFacetedCalcProvider)
+registry.register("tuple_faceted_metric", TupleFacetedCalcProvider)

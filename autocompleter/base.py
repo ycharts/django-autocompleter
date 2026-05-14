@@ -356,7 +356,11 @@ class AutocompleterProviderBase(AutocompleterBase):
         data = self.get_data()
         for facet in self.get_facets():
             try:
-                facet_dicts.append({"key": facet, "value": data[facet]})
+                # normalize collections into lists
+                value = data[facet]
+                if isinstance(value, tuple):
+                    value = list(value)
+                facet_dicts.append({"key": facet, "value": value})
             except KeyError:
                 pass
         return facet_dicts
@@ -819,12 +823,20 @@ class AutocompleterProviderBase(AutocompleterBase):
                 else live_obj_facets - db_obj_facets
             )
             for key, value in facets_to_add:
+                # `get_facets_dict` normalizes all sequence values to lists,
+                # and `_hashable_value` converts list to tuples for frozenset storage;
+                # so any tuple here was a list originally
+                value = list(value) if isinstance(value, tuple) else value
                 facet_sorted_set_key = FACET_SET_BASE_NAME % (provider_name, key, value)
                 pipe.zadd(facet_sorted_set_key, {obj_id: scores_live_map[obj_id]})
                 log.debug(f"Added {obj_id} to {facet_sorted_set_key}")
 
             facets_to_remove = db_obj_facets - live_obj_facets
             for key, value in facets_to_remove:
+                # `get_facets_dict` normalizes all sequence values to lists,
+                # and `_hashable_value` converts list to tuples for frozenset storage;
+                # so any tuple here was a list originally
+                value = list(value) if isinstance(value, tuple) else value
                 facet_sorted_set_key = FACET_SET_BASE_NAME % (provider_name, key, value)
                 pipe.zrem(facet_sorted_set_key, obj_id)
                 log.debug(f"Removed {obj_id} from {facet_sorted_set_key}")
