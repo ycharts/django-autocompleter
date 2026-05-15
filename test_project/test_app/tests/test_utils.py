@@ -1,6 +1,6 @@
 from django.test import TestCase
 from autocompleter import Autocompleter
-from autocompleter.utils import get_normalized_term
+from autocompleter.utils import get_norm_term_variations, get_normalized_term
 from autocompleter.views import SuggestView
 
 
@@ -247,3 +247,12 @@ class TestNormalizedTerm(TestCase):
             " cent change",
             get_normalized_term("Non Percent Change", replaced_chars=["non", "per"]),
         )
+
+
+class TestNormTermVariations(TestCase):
+    def test_join_char_does_not_produce_dupe(self):
+        """
+        A trailing join char in a string, e.g. "p/", should just return "p" as opposed to "p" and "p "
+        """
+        variations = get_norm_term_variations("p/")
+        self.assertEqual(variations, {"p"})
