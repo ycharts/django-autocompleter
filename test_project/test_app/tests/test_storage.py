@@ -171,65 +171,61 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         """
         Storing and removing items all at once works with caching turned on
         """
-        # Let's turn on caching because that will store things in Redis and we want to make
-        # sure we clean them up.
         setattr(auto_settings, "CACHE_TIMEOUT", 3600)
+        try:
+            autocomp = Autocompleter("stock")
+            self.store_all_for_ac("stock")
 
-        autocomp = Autocompleter("stock")
-        autocomp.store_all()
+            keys = self.redis.hkeys("djac.test.stock")
+            self.assertEqual(len(keys), 104)
 
-        keys = self.redis.hkeys("djac.test.stock")
-        self.assertEqual(len(keys), 104)
+            for i in range(0, 3):
+                autocomp.suggest("a")
+                autocomp.suggest("z")
+                autocomp.exact_suggest("aapl")
+                autocomp.exact_suggest("xyz")
 
-        autocomp = Autocompleter("stock")
-        for i in range(0, 3):
-            autocomp.suggest("a")
-            autocomp.suggest("z")
-            autocomp.exact_suggest("aapl")
-            autocomp.exact_suggest("xyz")
+            self.remove_all_for_ac("stock")
 
-        autocomp.remove_all()
+            non_cache_keys = self._non_cache_keys("djac.test.stock")
+            self.assertEqual(non_cache_keys, [])
 
-        non_cache_keys = self._non_cache_keys("djac.test.stock")
-        self.assertEqual(non_cache_keys, [])
-
-        self.assertEqual(autocomp.suggest("a"), [])
-        self.assertEqual(autocomp.exact_suggest("aapl"), [])
-
-        # Must set the setting back to where it was as it will persist
-        setattr(auto_settings, "CACHE_TIMEOUT", 0)
+            autocomp.clear_cache()
+            self.assertEqual(autocomp.suggest("a"), [])
+            self.assertEqual(autocomp.exact_suggest("aapl"), [])
+        finally:
+            # Must set the setting back to where it was as it will persist
+            setattr(auto_settings, "CACHE_TIMEOUT", 0)
 
     def test_dict_store_and_remove_all_basic_with_caching(self):
         """
         Storing and removing items all at once works with caching turned on on dict ac
         """
-        # Let's turn on caching because that will store things in Redis and we want to make
-        # sure we clean them up.
         setattr(auto_settings, "CACHE_TIMEOUT", 3600)
+        try:
+            autocomp = Autocompleter("metric")
+            self.store_all_for_ac("metric")
 
-        autocomp = Autocompleter("metric")
-        autocomp.store_all()
+            keys = self.redis.hkeys("djac.test.metric")
+            self.assertEqual(len(keys), 8)
 
-        keys = self.redis.hkeys("djac.test.metric")
-        self.assertEqual(len(keys), 8)
+            for i in range(0, 3):
+                autocomp.suggest("m")
+                autocomp.suggest("e")
+                autocomp.exact_suggest("PE Ratio TTM")
+                autocomp.exact_suggest("Market Cap")
 
-        autocomp = Autocompleter("metric")
-        for i in range(0, 3):
-            autocomp.suggest("m")
-            autocomp.suggest("e")
-            autocomp.exact_suggest("PE Ratio TTM")
-            autocomp.exact_suggest("Market Cap")
+            self.remove_all_for_ac("metric")
 
-        autocomp.remove_all()
+            non_cache_keys = self._non_cache_keys("djac.test.metric")
+            self.assertEqual(non_cache_keys, [])
 
-        non_cache_keys = self._non_cache_keys("djac.test.metric")
-        self.assertEqual(non_cache_keys, [])
-
-        self.assertEqual(autocomp.suggest("m"), [])
-        self.assertEqual(autocomp.exact_suggest("PE Ratio TTM"), [])
-
-        # Must set the setting back to where it was as it will persist
-        setattr(auto_settings, "CACHE_TIMEOUT", 0)
+            autocomp.clear_cache()
+            self.assertEqual(autocomp.suggest("m"), [])
+            self.assertEqual(autocomp.exact_suggest("PE Ratio TTM"), [])
+        finally:
+            # Must set the setting back to where it was as it will persist
+            setattr(auto_settings, "CACHE_TIMEOUT", 0)
 
     def _non_cache_keys(self, prefix):
         """
