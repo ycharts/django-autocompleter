@@ -12,14 +12,18 @@ from autocompleter import registry, settings, utils
 # We don't use all settings because the connection dict currently has decode_responses set to True, but the
 # autocompleter repo is structured around bytes, not strings.
 redis_client_settings = {
-    'host': settings.REDIS_CONNECTION["host"],
-    'port': settings.REDIS_CONNECTION["port"],
-    'db': settings.REDIS_CONNECTION["db"],
+    "host": settings.REDIS_CONNECTION["host"],
+    "port": settings.REDIS_CONNECTION["port"],
+    "db": settings.REDIS_CONNECTION["db"],
 }
-if settings.REDIS_CONNECTION.get('socket_timeout', None) is not None:
-    redis_client_settings['socket_timeout'] = settings.REDIS_CONNECTION['socket_timeout']
-if settings.REDIS_CONNECTION.get('socket_connect_timeout', None) is not None:
-    redis_client_settings['socket_connect_timeout'] = settings.REDIS_CONNECTION['socket_connect_timeout']
+if settings.REDIS_CONNECTION.get("socket_timeout", None) is not None:
+    redis_client_settings["socket_timeout"] = settings.REDIS_CONNECTION[
+        "socket_timeout"
+    ]
+if settings.REDIS_CONNECTION.get("socket_connect_timeout", None) is not None:
+    redis_client_settings["socket_connect_timeout"] = settings.REDIS_CONNECTION[
+        "socket_connect_timeout"
+    ]
 
 REDIS = redis.Redis(**redis_client_settings)
 
@@ -31,8 +35,9 @@ else:
     AUTO_BASE_NAME = "djac.%s"
     RESULT_SET_BASE_NAME = "djac.results.%s"
 
-CACHE_BASE_NAME = AUTO_BASE_NAME + ".c.%s.%s"
-EXACT_CACHE_BASE_NAME = AUTO_BASE_NAME + ".ce.%s"
+CACHE_BASE_NAME = AUTO_BASE_NAME + ".v%s.c.%s.%s"
+EXACT_CACHE_BASE_NAME = AUTO_BASE_NAME + ".v%s.ce.%s"
+CACHE_VERSION_BASE_NAME = AUTO_BASE_NAME + ".cv"
 
 PREFIX_BASE_NAME = AUTO_BASE_NAME + ".p.%s"
 PREFIX_SET_BASE_NAME = AUTO_BASE_NAME + ".ps"
@@ -95,7 +100,9 @@ class AutocompleterBase(object):
     @classmethod
     def _facet_list_to_set(cls, facet_list):
         """Creates an unmodifiable set of facet key value pairs from a list of dict facets."""
-        return frozenset((f["key"], cls._hashable_value(f["value"])) for f in facet_list)
+        return frozenset(
+            (f["key"], cls._hashable_value(f["value"])) for f in facet_list
+        )
 
     @staticmethod
     def _hashable_value(value):
@@ -519,8 +526,7 @@ class AutocompleterProviderBase(AutocompleterBase):
         prefix_set_name = PREFIX_SET_BASE_NAME % (provider_name,)
         prefixes = REDIS.smembers(prefix_set_name)
         keys = [
-            PREFIX_BASE_NAME % (provider_name, prefix.decode())
-            for prefix in prefixes
+            PREFIX_BASE_NAME % (provider_name, prefix.decode()) for prefix in prefixes
         ]
         chunked_prefix_keys = cls.chunk_list(keys, 100)
 
@@ -740,8 +746,12 @@ class AutocompleterProviderBase(AutocompleterBase):
                 pipe.zrem(exact_sorted_set_key, obj_id)
                 log.debug(f"Removed {obj_id} from {exact_sorted_set_key}")
 
-            live_obj_prefixes = frozenset(cls._get_prefixes_set(terms_live_map.get(obj_id, [])))
-            db_obj_prefixes = frozenset(cls._get_prefixes_set(terms_db_map.get(obj_id, [])))
+            live_obj_prefixes = frozenset(
+                cls._get_prefixes_set(terms_live_map.get(obj_id, []))
+            )
+            db_obj_prefixes = frozenset(
+                cls._get_prefixes_set(terms_db_map.get(obj_id, []))
+            )
 
             prefixes_to_add = (
                 live_obj_prefixes
@@ -783,8 +793,12 @@ class AutocompleterProviderBase(AutocompleterBase):
             log.info(f"Removed {len(to_remove)} entries from {terms_map_key}")
 
         # Update the set of all prefixes (used for remove_all)
-        all_prefixes_in_db = {x for _, prefix_set in prefixes_db_set for x in prefix_set}
-        all_prefixes_in_live_data = {x for _, prefix_set in prefixes_live_set for x in prefix_set}
+        all_prefixes_in_db = {
+            x for _, prefix_set in prefixes_db_set for x in prefix_set
+        }
+        all_prefixes_in_live_data = {
+            x for _, prefix_set in prefixes_live_set for x in prefix_set
+        }
         prefixes_set_key = PREFIX_SET_BASE_NAME % (provider_name,)
         if to_remove := all_prefixes_in_db - all_prefixes_in_live_data:
             pipe.srem(prefixes_set_key, *to_remove)
@@ -958,19 +972,25 @@ class Autocompleter(AutocompleterBase):
         super().__init__(*args, **kwargs)
         self.name = name
 
+    def _get_cache_version(self):
+        """
+        Return the current cache version for this autocompleter.
+
+        Cache keys are namespaced by version so that clear_cache() can
+        invalidate every cached result with a single INCR.
+        """
+        version = REDIS.get(CACHE_VERSION_BASE_NAME % (self.name,))
+        return int(version) if version is not None else 0
+
     def clear_cache(self):
         """
-        Clear cache
-        """
-        cache_key = CACHE_BASE_NAME % (self.name, "*", "*")
-        exact_cache_key = EXACT_CACHE_BASE_NAME % (
-            self.name,
-            "*",
-        )
+        Invalidate all cached suggest/exact_suggest results for this autocompleter.
 
-        keys = REDIS.keys(cache_key) + REDIS.keys(exact_cache_key)
-        if len(keys) > 0:
-            REDIS.unlink(*keys)
+        Bumps the cache version so subsequent reads miss and recompute. Existing
+        cache keys are orphaned and expire via CACHE_TIMEOUT.
+        This makes cache invalidation O(1).
+        """
+        REDIS.incr(CACHE_VERSION_BASE_NAME % (self.name,))
 
     def suggest(self, term, facets=[]):
         """
@@ -981,14 +1001,17 @@ class Autocompleter(AutocompleterBase):
             return []
 
         # If we have a cached version of the search results available, return it!
-        hashed_facets = self.hash_facets(facets)
-        cache_key = CACHE_BASE_NAME % (
-            self.name,
-            utils.get_normalized_term(term, settings.JOIN_CHARS),
-            hashed_facets,
-        )
-        if settings.CACHE_TIMEOUT and REDIS.exists(cache_key):
-            return self.__class__._deserialize_data(REDIS.get(cache_key))
+        cache_key = None
+        if settings.CACHE_TIMEOUT:
+            cache_key = CACHE_BASE_NAME % (
+                self.name,
+                self._get_cache_version(),
+                utils.get_normalized_term(term, settings.JOIN_CHARS),
+                self.hash_facets(facets),
+            )
+            cached = REDIS.get(cache_key)
+            if cached is not None:
+                return self.__class__._deserialize_data(cached)
 
         # Get the normalized term variations we need to search for each term. A single term
         # could turn into multiple terms we need to search.
@@ -1069,7 +1092,9 @@ class Autocompleter(AutocompleterBase):
                         continue
 
                     facet_list = facet_group["facets"]
-                    facet_group_keys_set = set([sub_facet["key"] for sub_facet in facet_list])
+                    facet_group_keys_set = set(
+                        [sub_facet["key"] for sub_facet in facet_list]
+                    )
                     if not facet_group_keys_set.issubset(provider_keys_set):
                         # For a given facet_group, if the provider does not support all the facet keys, then we can't
                         # filter based on it, and we skip the facet_group
@@ -1291,12 +1316,16 @@ class Autocompleter(AutocompleterBase):
             return []
 
         # If we have a cached version of the search results available, return it!
-        cache_key = EXACT_CACHE_BASE_NAME % (
-            self.name,
-            term,
-        )
-        if settings.CACHE_TIMEOUT and REDIS.exists(cache_key):
-            return self.__class__._deserialize_data(REDIS.get(cache_key))
+        cache_key = None
+        if settings.CACHE_TIMEOUT:
+            cache_key = EXACT_CACHE_BASE_NAME % (
+                self.name,
+                self._get_cache_version(),
+                term,
+            )
+            cached = REDIS.get(cache_key)
+            if cached is not None:
+                return self.__class__._deserialize_data(cached)
         provider_results = OrderedDict()
 
         # Get the normalized we need to search for each term... A single term

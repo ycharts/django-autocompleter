@@ -1,11 +1,18 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-
+import re
 from unittest.mock import MagicMock, patch
 
-from autocompleter import Autocompleter, base, registry, signal_registry
-from autocompleter import settings as auto_settings
+from autocompleter import (
+    Autocompleter,
+    base,
+    registry,
+    signal_registry,
+)
+from autocompleter import (
+    settings as auto_settings,
+)
 from autocompleter.registry import (
     add_obj_to_autocompleter,
     remove_obj_from_autocompleter,
@@ -98,8 +105,7 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         self.assertEqual(len(keys), 104)
 
         StockAutocompleteProvider.remove_all()
-        keys = self.redis.keys("djac.test.stock*")
-        self.assertEqual(len(keys), 0)
+        self.assertEqual(self._non_cache_keys("djac.test.stock"), [])
 
     def test_orphan_removal(self):
         """
@@ -161,6 +167,78 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         keys = self.redis.keys("djac.test.metric")
         self.assertEqual(len(keys), 0)
 
+    def test_store_and_remove_all_basic_with_caching(self):
+        """
+        Storing and removing items all at once works with caching turned on
+        """
+        setattr(auto_settings, "CACHE_TIMEOUT", 3600)
+        try:
+            autocomp = Autocompleter("stock")
+            self.store_all_for_ac("stock")
+
+            keys = self.redis.hkeys("djac.test.stock")
+            self.assertEqual(len(keys), 104)
+
+            for i in range(0, 3):
+                autocomp.suggest("a")
+                autocomp.suggest("z")
+                autocomp.exact_suggest("aapl")
+                autocomp.exact_suggest("xyz")
+
+            self.remove_all_for_ac("stock")
+
+            non_cache_keys = self._non_cache_keys("djac.test.stock")
+            self.assertEqual(non_cache_keys, [])
+
+            autocomp.clear_cache()
+            self.assertEqual(autocomp.suggest("a"), [])
+            self.assertEqual(autocomp.exact_suggest("aapl"), [])
+        finally:
+            # Must set the setting back to where it was as it will persist
+            setattr(auto_settings, "CACHE_TIMEOUT", 0)
+
+    def test_dict_store_and_remove_all_basic_with_caching(self):
+        """
+        Storing and removing items all at once works with caching turned on on dict ac
+        """
+        setattr(auto_settings, "CACHE_TIMEOUT", 3600)
+        try:
+            autocomp = Autocompleter("metric")
+            self.store_all_for_ac("metric")
+
+            keys = self.redis.hkeys("djac.test.metric")
+            self.assertEqual(len(keys), 8)
+
+            for i in range(0, 3):
+                autocomp.suggest("m")
+                autocomp.suggest("e")
+                autocomp.exact_suggest("PE Ratio TTM")
+                autocomp.exact_suggest("Market Cap")
+
+            self.remove_all_for_ac("metric")
+
+            non_cache_keys = self._non_cache_keys("djac.test.metric")
+            self.assertEqual(non_cache_keys, [])
+
+            autocomp.clear_cache()
+            self.assertEqual(autocomp.suggest("m"), [])
+            self.assertEqual(autocomp.exact_suggest("PE Ratio TTM"), [])
+        finally:
+            # Must set the setting back to where it was as it will persist
+            setattr(auto_settings, "CACHE_TIMEOUT", 0)
+
+    def _non_cache_keys(self, prefix):
+        """
+        Helper function to list all non-cache keys given a prefix.
+        """
+
+        cache_key_pattern = re.compile(re.escape(prefix) + r"(\.cv$|\.v\d+\.(c|ce)\.)")
+        return [
+            k
+            for k in self.redis.keys(prefix + "*")
+            if not cache_key_pattern.match(k.decode())
+        ]
+
     def test_store_and_remove_all_multi(self):
         """
         Storing and removing items all at once works for a multi-model autocompleter.
@@ -174,14 +252,10 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         self.assertEqual(len(keys), 8)
 
         self.remove_all_for_ac("mixed")
-        keys = self.redis.keys("djac.test.stock*")
-        self.assertEqual(len(keys), 0)
-        keys = self.redis.keys("djac.test.ind*")
-        self.assertEqual(len(keys), 0)
-        keys = self.redis.keys("djac.test.mixed*")
-        self.assertEqual(len(keys), 0)
-        keys = self.redis.keys("djac.test.metric*")
-        self.assertEqual(len(keys), 0)
+        self.assertEqual(self._non_cache_keys("djac.test.stock"), [])
+        self.assertEqual(self._non_cache_keys("djac.test.ind"), [])
+        self.assertEqual(self._non_cache_keys("djac.test.mixed"), [])
+        self.assertEqual(self._non_cache_keys("djac.test.metric"), [])
 
     def test_remove_intermediate_results_exact_suggest(self):
         """
@@ -638,9 +712,7 @@ class UpdateFieldsTestCase(AutocompleterTestCase):
             "get_relevant_field_names",
             new=staticmethod(lambda: relevant_fields),
         ):
-            add_obj_to_autocompleter(
-                Stock, aapl, False, update_fields=["market_cap"]
-            )
+            add_obj_to_autocompleter(Stock, aapl, False, update_fields=["market_cap"])
 
         self.assertEqual(mock_store.call_count, 0)
 
