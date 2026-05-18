@@ -255,4 +255,4 @@ class TestNormTermVariations(TestCase):
         A trailing join char in a string, e.g. "p/", should just return "p" as opposed to "p" and "p "
         """
         variations = get_norm_term_variations("p/")
-        self.assertEqual(variations, {"p"})
+        self.assertEqual(variations, ["p"])
