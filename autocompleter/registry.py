@@ -162,7 +162,7 @@ class AutocompleterRegistry(object):
         # Provider specific version
         try:
             provider_settings = getattr(provider, "settings")
-            setting_value = provider_settings["setting_name"]
+            setting_value = provider_settings[setting_name]
             return setting_value
         except (KeyError, AttributeError):
             # Global version
