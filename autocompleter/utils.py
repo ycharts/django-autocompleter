@@ -68,7 +68,7 @@ def get_norm_term_variations(term):
         norm_term = get_normalized_term(term, []).strip()
         if norm_term != "":
             norm_terms.add(norm_term)
-    return norm_terms
+    return sorted(norm_terms)
 
 
 def get_aliased_variations(term, phrase_aliases):
