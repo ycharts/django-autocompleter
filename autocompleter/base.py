@@ -994,7 +994,20 @@ class Autocompleter(AutocompleterBase):
 
     def suggest(self, term, facets=[], *, strict=True):
         """
-        Suggest matching objects, given a term
+        Suggest matching objects, given a term.
+
+        By default, suggest returns empty results for providers that can't satisfy all facets. For OR groups with a mix
+        of supported and unsupported keys, the unsupported keys are silently dropped and the rest are applied — this
+        behaves the same in both modes. Use strict=False to restore the old behavior where fully unsatisfiable groups
+        are skipped and results come back unfiltered.
+
+        ┌──────────────────────────────────────┬─────────────────────────────────┬─────────────────────────────┐
+        │             Facet Group              │   strict=True  (new default)    │        strict=False         │
+        ├──────────────────────────────────────┼─────────────────────────────────┼─────────────────────────────┤
+        │ AND(sector=Energy, fake_key=X)       │ empty results                   │ group skipped (unfiltered)  │
+        │ OR(sector=Energy, fake_key=X)        │ applies OR(sector=Energy)       │ applies OR(sector=Energy)   │
+        │ OR(fake_key=X, other_fake=Y)         │ empty results                   │ group skipped (unfiltered)  │
+        └──────────────────────────────────────┴─────────────────────────────────┴─────────────────────────────┘
         """
         providers = self._get_all_providers_by_autocompleter()
         if providers is None:
