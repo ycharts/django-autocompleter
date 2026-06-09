@@ -47,6 +47,80 @@ class StoringAndRemovingTestCase(AutocompleterTestCase):
         keys = self.redis.keys("djac.test.stock*")
         self.assertEqual(len(keys), 0)
 
+    def test_store_and_remove_by_id(self):
+        """
+        remove_by_id removes an item given only its ID, without an instance
+        """
+        aapl = Stock.objects.get(symbol="AAPL")
+        provider = StockAutocompleteProvider(aapl)
+
+        provider.store()
+        keys = self.redis.hkeys("djac.test.stock")
+        self.assertEqual(len(keys), 1)
+
+        StockAutocompleteProvider.remove_by_id(provider.get_item_id())
+        keys = self.redis.keys("djac.test.stock*")
+        self.assertEqual(len(keys), 0)
+
+    def test_remove_by_id_clears_score(self):
+        """
+        remove_by_id clears the stored score
+        """
+        aapl = Stock.objects.get(symbol="AAPL")
+        provider = StockAutocompleteProvider(aapl)
+        provider.store()
+
+        keys = self.redis.hkeys("djac.test.stock.sm")
+        self.assertEqual(len(keys), 1)
+
+        StockAutocompleteProvider.remove_by_id(provider.get_item_id())
+        keys = self.redis.hkeys("djac.test.stock.sm")
+        self.assertEqual(len(keys), 0)
+
+    def test_dict_store_and_remove_by_id(self):
+        """
+        remove_by_id works for a dictionary obj autocompleter
+        """
+        item = calc_info.calc_dicts[0]
+        provider = CalcAutocompleteProvider(item)
+        provider.store()
+
+        keys = self.redis.hkeys("djac.test.metric")
+        self.assertEqual(len(keys), 1)
+
+        CalcAutocompleteProvider.remove_by_id(provider.get_item_id())
+        keys = self.redis.keys("djac.test.metric*")
+        self.assertEqual(len(keys), 0)
+
+    def test_remove_by_id_nonexistent_is_noop(self):
+        """
+        remove_by_id on an ID that was never stored does not error and leaves
+        other stored items untouched
+        """
+        aapl = Stock.objects.get(symbol="AAPL")
+        provider = StockAutocompleteProvider(aapl)
+        provider.store()
+
+        # An ID that was never stored has no old terms, facets, or score.
+        StockAutocompleteProvider.remove_by_id("does-not-exist")
+
+        keys = self.redis.hkeys("djac.test.stock")
+        self.assertEqual(len(keys), 1)
+
+    def test_remove_calls_remove_by_id(self):
+        """
+        remove delegates to remove_by_id with the object's item ID
+        """
+        aapl = Stock.objects.get(symbol="AAPL")
+        provider = StockAutocompleteProvider(aapl)
+
+        with patch.object(
+            StockAutocompleteProvider, "remove_by_id"
+        ) as mock_remove_by_id:
+            provider.remove()
+
+        mock_remove_by_id.assert_called_once_with(provider.get_item_id())
+
     def test_store_saves_terms(self):
         """
         Storing saves norm terms, not plain terms
@@ -387,6 +461,29 @@ class FacetedStoringAndRemovingTestCase(AutocompleterTestCase):
         provider = FacetedStockAutocompleteProvider(aapl)
         provider.store()
         provider.remove()
+
+        provider_name = provider.get_provider_name()
+        # the FacetedStockAutocompleteProvider get_facets is set to ['sector']
+        facet_set_name = base.FACET_SET_BASE_NAME % (
+            provider_name,
+            "sector",
+            "Technology",
+        )
+        set_length = self.redis.zcard(facet_set_name)
+        self.assertEqual(set_length, 0)
+
+        facet_map_name = base.FACET_MAP_BASE_NAME % (provider_name,)
+        keys = self.redis.hkeys(facet_map_name)
+        self.assertEqual(len(keys), 0)
+
+    def test_remove_facet_data_by_id(self):
+        """
+        remove_by_id deletes facet data given only the item ID
+        """
+        aapl = Stock.objects.get(symbol="AAPL")
+        provider = FacetedStockAutocompleteProvider(aapl)
+        provider.store()
+        FacetedStockAutocompleteProvider.remove_by_id(provider.get_item_id())
 
         provider_name = provider.get_provider_name()
         # the FacetedStockAutocompleteProvider get_facets is set to ['sector']
