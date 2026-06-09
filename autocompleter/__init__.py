@@ -1,4 +1,4 @@
-VERSION = (1, 3, 0)
+VERSION = (1, 3, 1)
 
 
 from django.utils.module_loading import autodiscover_modules
