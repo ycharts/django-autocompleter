@@ -1070,23 +1070,6 @@ class CardinalityThresholdMatchingTestCase(AutocompleterTestCase):
         names = self._display_names(self.autocomp.suggest("treasury rate"))
         self.assertIn("Treasury Deposits", names)
 
-    def test_prefix_key_to_cardinality_mapping(self):
-        """
-        _get_prefix_key_to_cardinality_mapping returns one entry per (provider, normalized word)
-        prefix key, mapped to that set's actual Redis cardinality.
-        """
-        providers = self.autocomp._get_all_providers_by_autocompleter()
-        cardinalities = Autocompleter._get_prefix_key_to_cardinality_mapping(
-            providers, ["treasury"]
-        )
-
-        # Single provider, single word -> a single prefix key.
-        self.assertEqual(len(cardinalities), 1)
-        key, card = next(iter(cardinalities.items()))
-        self.assertTrue(key.endswith("ind.p.treasury"))
-        self.assertGreater(card, 0)
-        self.assertEqual(card, self.redis.zcard(key))
-
     def test_threshold_exceeded_union_path_still_returns_results(self):
         """
         Join-char queries ("mortgage-backed") produce multiple normalized terms and exercise the

@@ -1527,6 +1527,9 @@ class Autocompleter(AutocompleterBase):
 
     @staticmethod
     def _get_prefix_key_to_cardinality_mapping(providers, norm_terms):
+        """
+        For each provider and normalized term, get the cardinality of the corresponding prefix sorted sets
+        """
         all_prefix_key_names = []
         for provider in providers:
             provider_name = provider.provider_name
