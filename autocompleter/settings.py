@@ -18,6 +18,14 @@ FLATTEN_SINGLE_TYPE_RESULTS = getattr(
     settings, "AUTOCOMPLETER_FLATTEN_SINGLE_TYPE_RESULTS", True
 )
 
+# Maximum number of items that a particular prefix set can contain before we stop doing expensive operations on it
+# (intersections and unions). In this scenario, the autocompleter will just use the min cardinality set from the given
+# prefix sets that the autocompleter is attempting to compute the expensive calculation on.
+# For example, if you have a prefix set with 50,000 items and a prefix set with 10 items, the autocompleter will just
+# use the prefix set with 10 items and ignore the prefix set with 50,000 items instead of trying to compute
+# an intersection/union of the two sets, which could be prohibitively expensive.
+CARDINALITY_THRESHOLD = getattr(settings, "AUTOCOMPLETER_CARDINALITY_THRESHOLD", 50_000)
+
 # Characters we want the autocompleter to interpret as both a space and a blank string.
 # Meaning by default, 'U/S-A' will also be stored as 'U SA', 'US A', 'U S A', and 'USA'
 JOIN_CHARS = getattr(settings, "AUTOCOMPLETER_JOIN_CHARS", ["-", "/"])

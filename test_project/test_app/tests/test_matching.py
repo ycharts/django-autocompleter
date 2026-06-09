@@ -988,3 +988,114 @@ class TupleFacetUpdateTestCase(AutocompleterTestCase):
 
         matches = self.autocomp.suggest("rev", facets=facets)
         self.assertGreater(len(matches), 0)
+
+
+class CardinalityThresholdMatchingTestCase(AutocompleterTestCase):
+    """
+    Tests for the CARDINALITY_THRESHOLD setting. When a per-word prefix set exceeds the
+    threshold, suggest() skips the expensive zinterstore/zunionstore and uses the smallest
+    involved prefix set as a proxy.
+
+    We rely on the indicator fixture, where "treasury rate" is a clean example: the word
+    "treasury" matches "Treasury Deposits" while the intersection with "rate" does not.
+    """
+
+    fixtures = ["indicator_test_data_small.json"]
+
+    def setUp(self):
+        super().setUp()
+        self.autocomp = Autocompleter("indicator")
+        self.store_all_for_ac("indicator")
+
+    def tearDown(self):
+        self.remove_all_for_ac("indicator")
+        # The setting persists on the module, so always restore it to the default even if an
+        # assertion failed mid-test.
+        setattr(auto_settings, "CARDINALITY_THRESHOLD", 50_000)
+
+    @staticmethod
+    def _display_names(matches):
+        return {match["display_name"] for match in matches}
+
+    def test_default_threshold_computes_intersection(self):
+        """
+        With the default (high) threshold, a multi-word query returns the true intersection of
+        its per-word prefix sets, so items matching only one of the words are excluded.
+        """
+        names = self._display_names(self.autocomp.suggest("treasury rate"))
+
+        self.assertGreater(len(names), 0)
+        for name in names:
+            self.assertIn("treasury", name.lower())
+            self.assertIn("rate", name.lower())
+        # "Treasury Deposits" matches "treasury" but not "rate", so the intersection excludes it.
+        self.assertNotIn("Treasury Deposits", names)
+
+    def test_threshold_exceeded_skips_intersection(self):
+        """
+        A threshold of 0 forces every non-empty prefix set to be treated as high-cardinality,
+        so the intersection is skipped in favor of the smallest prefix set ("treasury"). The
+        result is a superset of the true intersection.
+        """
+        intersection_names = self._display_names(self.autocomp.suggest("treasury rate"))
+
+        setattr(auto_settings, "CARDINALITY_THRESHOLD", 0)
+        proxy_names = self._display_names(self.autocomp.suggest("treasury rate"))
+
+        # The proxy result (the "treasury" prefix set) is a superset of the intersection...
+        self.assertTrue(intersection_names.issubset(proxy_names))
+        # ...and now includes an item that only matches the smaller word.
+        self.assertIn("Treasury Deposits", proxy_names)
+        self.assertNotIn("Treasury Deposits", intersection_names)
+
+    def test_threshold_comparison_is_strict(self):
+        """
+        The threshold check is strict (card > threshold). A prefix set whose size equals the
+        threshold is NOT treated as high-cardinality, so the intersection is still computed;
+        dropping the threshold one below the largest set flips that.
+        """
+        providers = self.autocomp._get_all_providers_by_autocompleter()
+        cardinalities = Autocompleter._get_prefix_key_to_cardinality_mapping(
+            providers, ["treasury rate"]
+        )
+        max_card = max(cardinalities.values())
+
+        # threshold == largest involved set -> not exceeded -> intersection computed.
+        setattr(auto_settings, "CARDINALITY_THRESHOLD", max_card)
+        names = self._display_names(self.autocomp.suggest("treasury rate"))
+        self.assertNotIn("Treasury Deposits", names)
+
+        # threshold one below the largest involved set -> exceeded -> intersection skipped.
+        setattr(auto_settings, "CARDINALITY_THRESHOLD", max_card - 1)
+        names = self._display_names(self.autocomp.suggest("treasury rate"))
+        self.assertIn("Treasury Deposits", names)
+
+    def test_prefix_key_to_cardinality_mapping(self):
+        """
+        _get_prefix_key_to_cardinality_mapping returns one entry per (provider, normalized word)
+        prefix key, mapped to that set's actual Redis cardinality.
+        """
+        providers = self.autocomp._get_all_providers_by_autocompleter()
+        cardinalities = Autocompleter._get_prefix_key_to_cardinality_mapping(
+            providers, ["treasury"]
+        )
+
+        # Single provider, single word -> a single prefix key.
+        self.assertEqual(len(cardinalities), 1)
+        key, card = next(iter(cardinalities.items()))
+        self.assertTrue(key.endswith("ind.p.treasury"))
+        self.assertGreater(card, 0)
+        self.assertEqual(card, self.redis.zcard(key))
+
+    def test_threshold_exceeded_union_path_still_returns_results(self):
+        """
+        Join-char queries ("mortgage-backed") produce multiple normalized terms and exercise the
+        union code path. When the threshold is exceeded the union is skipped for a single proxy
+        key, but the known matching item should still be returned.
+        """
+        names = self._display_names(self.autocomp.suggest("mortgage-backed"))
+        self.assertTrue(any("Mortgage-Backed Securities" in name for name in names))
+
+        setattr(auto_settings, "CARDINALITY_THRESHOLD", 0)
+        proxy_names = self._display_names(self.autocomp.suggest("mortgage-backed"))
+        self.assertTrue(any("Mortgage-Backed Securities" in name for name in proxy_names))

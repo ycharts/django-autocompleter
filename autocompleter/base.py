@@ -1057,6 +1057,13 @@ class Autocompleter(AutocompleterBase):
         # Get the max results autocompleter setting
         MAX_RESULTS = registry.get_autocompleter_setting(self.name, "MAX_RESULTS")
 
+        prefix_key_to_cardinality = self._get_prefix_key_to_cardinality_mapping(providers, norm_terms)
+        high_cardinality_keys = {
+            key
+            for key, card in prefix_key_to_cardinality.items()
+            if card > settings.CARDINALITY_THRESHOLD
+        }
+
         pipe = REDIS.pipeline(transaction=False)
         for provider in providers:
             provider_name = provider.provider_name
@@ -1070,6 +1077,7 @@ class Autocompleter(AutocompleterBase):
                 continue
 
             term_result_keys = []
+            high_cardinality_key_detected_for_provider = False
             for norm_term in norm_terms:
                 norm_words = norm_term.split()
                 keys = [
@@ -1080,19 +1088,38 @@ class Autocompleter(AutocompleterBase):
                     )
                     for norm_word in norm_words
                 ]
+                high_cardinality_key_detected_for_term = False
+                if any(k in high_cardinality_keys for k in keys):
+                    high_cardinality_key_detected_for_term = True
+                    high_cardinality_key_detected_for_provider = True
                 if len(keys) == 1:
                     term_result_keys.append(keys[0])
                 else:
-                    term_result_key = base_result_key + "." + norm_term
-                    term_result_keys.append(term_result_key)
-                    keys_to_delete.add(term_result_key)
-                    pipe.zinterstore(term_result_key, keys, aggregate="MIN")
+                    if high_cardinality_key_detected_for_term:
+                        # at least one set exceeds the cardinality threshold, skip the intersection, use the
+                        # smallest of these keys as a proxy for the intersection
+                        smallest_key = min(keys, key=lambda k: prefix_key_to_cardinality[k])
+                        term_result_keys.append(smallest_key)
+                    else:
+                        term_result_key = base_result_key + "." + norm_term
+                        term_result_keys.append(term_result_key)
+                        keys_to_delete.add(term_result_key)
+                        pipe.zinterstore(term_result_key, keys, aggregate="MIN")
 
             if len(term_result_keys) == 1:
                 final_result_key = term_result_keys[0]
             else:
-                final_result_key = base_result_key
-                pipe.zunionstore(final_result_key, term_result_keys, aggregate="MIN")
+                # the only way a term result key could be large here would be if a norm word only led to a single prefix
+                # key which was large, because it would have bypassed the above smallest key logic
+                # in this situation, we don't actually know the smallest key because we don't have cardinalities
+                # of the term result keys, only the prefix keys. So we fall back to either picking the smallest prefix
+                # key, or randomly picking one of the term result keys.
+                if high_cardinality_key_detected_for_provider:
+                    smallest_key = min(term_result_keys, key=lambda k: prefix_key_to_cardinality.get(k, 0))
+                    final_result_key = smallest_key
+                else:
+                    final_result_key = base_result_key
+                    pipe.zunionstore(final_result_key, term_result_keys, aggregate="MIN")
 
             provider_keys_set = set(provider.get_facets())
 
@@ -1497,3 +1524,27 @@ class Autocompleter(AutocompleterBase):
             return int((round(value) + (abs(value) / value) * 1))
         else:
             return int(round(value))
+
+    @staticmethod
+    def _get_prefix_key_to_cardinality_mapping(providers, norm_terms):
+        all_prefix_key_names = []
+        for provider in providers:
+            provider_name = provider.provider_name
+
+            for norm_term in norm_terms:
+                norm_words = norm_term.split()
+                prefix_key_set_names = [
+                    PREFIX_BASE_NAME
+                    % (
+                        provider_name,
+                        norm_word,
+                    )
+                    for norm_word in norm_words
+                ]
+                all_prefix_key_names.extend(prefix_key_set_names)
+
+        pipe = REDIS.pipeline(transaction=False)
+        for prefix_key_name in all_prefix_key_names:
+            pipe.zcard(prefix_key_name)
+        prefix_key_to_cardinality = dict(zip(all_prefix_key_names, pipe.execute()))
+        return prefix_key_to_cardinality
