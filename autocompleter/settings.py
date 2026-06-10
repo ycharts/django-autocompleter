@@ -18,14 +18,6 @@ FLATTEN_SINGLE_TYPE_RESULTS = getattr(
     settings, "AUTOCOMPLETER_FLATTEN_SINGLE_TYPE_RESULTS", True
 )
 
-# Maximum number of items that a particular prefix set can contain before we stop doing expensive operations on it
-# (intersections and unions). In this scenario, the autocompleter will just use the min cardinality set from the given
-# prefix sets that the autocompleter is attempting to compute the expensive calculation on.
-# For example, if you have a prefix set with 50,000 items and a prefix set with 10 items, the autocompleter will just
-# use the prefix set with 10 items and ignore the prefix set with 50,000 items instead of trying to compute
-# an intersection/union of the two sets, which could be prohibitively expensive.
-CARDINALITY_THRESHOLD = getattr(settings, "AUTOCOMPLETER_CARDINALITY_THRESHOLD", 50_000)
-
 # Characters we want the autocompleter to interpret as both a space and a blank string.
 # Meaning by default, 'U/S-A' will also be stored as 'U SA', 'US A', 'U S A', and 'USA'
 JOIN_CHARS = getattr(settings, "AUTOCOMPLETER_JOIN_CHARS", ["-", "/"])
@@ -39,6 +31,17 @@ SUGGEST_PARAMETER_NAME = getattr(settings, "AUTOCOMPLETER_SUGGEST_PARAMETER_NAME
 # Test data for debugging/running tests
 TEST_DATA = getattr(settings, "AUTOCOMPLETER_TEST_DATA", False)
 
+## Advanced optimization settings
+
+# When handling a suggest call that involves a multi-word term that could lead to large result sizes,
+# if the smallest set involved exceeds this threshold, skip the intersection operation
+# and use that smallest set as a proxy for the intersection.
+CARDINALITY_THRESHOLD_INTERSECTION = getattr( settings, "AUTOCOMPLETER_CARDINALITY_THRESHOLD_INTERSECTION", 50_000)
+
+# When combining result sets across normalized term variations, if the combined number of
+# members across all sets exceeds this threshold, skip the union and use the smallest
+# set as a proxy for the union.
+CARDINALITY_THRESHOLD_UNION = getattr(settings, "AUTOCOMPLETER_CARDINALITY_THRESHOLD_UNION", 50_000)
 
 # AC SETTINGS #
 
