@@ -36,7 +36,7 @@ TEST_DATA = getattr(settings, "AUTOCOMPLETER_TEST_DATA", False)
 # When handling a suggest call that involves a multi-word term that could lead to large result sizes,
 # if the smallest set involved exceeds this threshold, skip the intersection operation
 # and use that smallest set as a proxy for the intersection.
-CARDINALITY_THRESHOLD_INTERSECTION = getattr( settings, "AUTOCOMPLETER_CARDINALITY_THRESHOLD_INTERSECTION", 50_000)
+CARDINALITY_THRESHOLD_INTERSECTION = getattr(settings, "AUTOCOMPLETER_CARDINALITY_THRESHOLD_INTERSECTION", 50_000)
 
 # When combining result sets across normalized term variations, if the combined number of
 # members across all sets exceeds this threshold, skip the union and use the smallest
