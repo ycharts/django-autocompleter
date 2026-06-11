@@ -1066,6 +1066,8 @@ class Autocompleter(AutocompleterBase):
         # Get the max results autocompleter setting
         MAX_RESULTS = registry.get_autocompleter_setting(self.name, "MAX_RESULTS")
 
+        keys_to_cardinality = self._get_prefix_key_to_cardinality_mapping(providers, norm_terms)
+
         pipe = REDIS.pipeline(transaction=False)
         for provider in providers:
             provider_name = provider.provider_name
@@ -1092,16 +1094,32 @@ class Autocompleter(AutocompleterBase):
                 if len(keys) == 1:
                     term_result_keys.append(keys[0])
                 else:
-                    term_result_key = base_result_key + "." + norm_term
-                    term_result_keys.append(term_result_key)
-                    keys_to_delete.add(term_result_key)
-                    pipe.zinterstore(term_result_key, keys, aggregate="MIN")
+                    smallest_key = min(keys, key=lambda k: keys_to_cardinality[k])
+                    smallest_key_cardinality = keys_to_cardinality[smallest_key]
+                    if smallest_key_cardinality > settings.CARDINALITY_THRESHOLD_INTERSECTION:
+                        # the smallest key in this operation exceeds the threshold, skip the intersection, use the
+                        # smallest of these keys as a proxy for the intersection
+                        term_result_keys.append(smallest_key)
+                    else:
+                        term_result_key = base_result_key + "." + norm_term
+                        term_result_keys.append(term_result_key)
+                        keys_to_delete.add(term_result_key)
+                        # we don't know exactly what the term result key cardinality will be,
+                        # but it cannot be larger than the smallest key's cardinality when doing an intersection
+                        # so we set it as such to help future union optimizations
+                        keys_to_cardinality[term_result_key] = smallest_key_cardinality
+                        pipe.zinterstore(term_result_key, keys, aggregate="MIN")
 
             if len(term_result_keys) == 1:
                 final_result_key = term_result_keys[0]
             else:
-                final_result_key = base_result_key
-                pipe.zunionstore(final_result_key, term_result_keys, aggregate="MIN")
+                cardinality_sum = sum(keys_to_cardinality.get(k, 0) for k in term_result_keys)
+                if cardinality_sum > settings.CARDINALITY_THRESHOLD_UNION:
+                    smallest_key = min(term_result_keys, key=lambda k: keys_to_cardinality.get(k, 0))
+                    final_result_key = smallest_key
+                else:
+                    final_result_key = base_result_key
+                    pipe.zunionstore(final_result_key, term_result_keys, aggregate="MIN")
 
             provider_keys_set = set(provider.get_facets())
 
@@ -1506,3 +1524,30 @@ class Autocompleter(AutocompleterBase):
             return int((round(value) + (abs(value) / value) * 1))
         else:
             return int(round(value))
+
+    @staticmethod
+    def _get_prefix_key_to_cardinality_mapping(providers, norm_terms):
+        """
+        For each provider and normalized term, get the cardinality of the corresponding prefix sorted sets
+        """
+        all_prefix_key_names = []
+        for provider in providers:
+            provider_name = provider.provider_name
+
+            for norm_term in norm_terms:
+                norm_words = norm_term.split()
+                prefix_key_set_names = [
+                    PREFIX_BASE_NAME
+                    % (
+                        provider_name,
+                        norm_word,
+                    )
+                    for norm_word in norm_words
+                ]
+                all_prefix_key_names.extend(prefix_key_set_names)
+
+        pipe = REDIS.pipeline(transaction=False)
+        for prefix_key_name in all_prefix_key_names:
+            pipe.zcard(prefix_key_name)
+        prefix_key_to_cardinality = dict(zip(all_prefix_key_names, pipe.execute()))
+        return prefix_key_to_cardinality

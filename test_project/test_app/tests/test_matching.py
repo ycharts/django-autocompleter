@@ -988,3 +988,132 @@ class TupleFacetUpdateTestCase(AutocompleterTestCase):
 
         matches = self.autocomp.suggest("rev", facets=facets)
         self.assertGreater(len(matches), 0)
+
+
+class CardinalityThresholdMatchingTestCase(AutocompleterTestCase):
+    """
+    Tests for the CARDINALITY_THRESHOLD_INTERSECTION / CARDINALITY_THRESHOLD_UNION settings.
+
+    When the cost of a set operation is projected to exceed its threshold, suggest() skips the
+    expensive zinterstore/zunionstore and falls back to the smallest involved set as a proxy.
+    The cost models match Redis' worst case:
+      * ZINTERSTORE is bounded by the *smallest* input set, so the intersection skip is driven
+        by the smallest per-word prefix set's cardinality.
+      * ZUNIONSTORE is bounded by the *sum* of input sets, so the union skip is driven by the
+        sum of the term-result-key cardinalities.
+
+    We rely on the indicator fixture, where "treasury rate" is a clean example: the word
+    "treasury" matches "Treasury Deposits" while the intersection with "rate" does not. The
+    "treasury" set is small while the "rate" set is large, which lets us prove the intersection
+    decision keys off the smaller set.
+    """
+
+    fixtures = ["indicator_test_data_small.json"]
+
+    DEFAULT_THRESHOLD = 50_000
+
+    def setUp(self):
+        super().setUp()
+        self.autocomp = Autocompleter("indicator")
+        self.store_all_for_ac("indicator")
+
+    def tearDown(self):
+        self.remove_all_for_ac("indicator")
+        # The settings persist on the module, so always restore them to their defaults even if
+        # an assertion failed mid-test.
+        setattr(auto_settings, "CARDINALITY_THRESHOLD_INTERSECTION", self.DEFAULT_THRESHOLD)
+        setattr(auto_settings, "CARDINALITY_THRESHOLD_UNION", self.DEFAULT_THRESHOLD)
+
+    @staticmethod
+    def _display_names(matches):
+        return {match["display_name"] for match in matches}
+
+    def _prefix_cardinalities(self, norm_terms):
+        providers = self.autocomp._get_all_providers_by_autocompleter()
+        return Autocompleter._get_prefix_key_to_cardinality_mapping(providers, norm_terms)
+
+    def test_default_thresholds_compute_intersection(self):
+        """
+        With the default (high) thresholds, a multi-word query returns the true intersection of
+        its per-word prefix sets, so items matching only one of the words are excluded.
+        """
+        names = self._display_names(self.autocomp.suggest("treasury rate"))
+
+        self.assertGreater(len(names), 0)
+        for name in names:
+            self.assertIn("treasury", name.lower())
+            self.assertIn("rate", name.lower())
+        # "Treasury Deposits" matches "treasury" but not "rate", so the intersection excludes it.
+        self.assertNotIn("Treasury Deposits", names)
+
+    def test_intersection_threshold_zero_skips_intersection(self):
+        """
+        An intersection threshold of 0 forces every non-empty set over the limit, so the
+        intersection is skipped in favor of the smallest prefix set ("treasury"). The result is
+        a superset of the true intersection.
+        """
+        intersection_names = self._display_names(self.autocomp.suggest("treasury rate"))
+
+        setattr(auto_settings, "CARDINALITY_THRESHOLD_INTERSECTION", 0)
+        proxy_names = self._display_names(self.autocomp.suggest("treasury rate"))
+
+        # The proxy result (the "treasury" prefix set) is a superset of the intersection...
+        self.assertTrue(intersection_names.issubset(proxy_names))
+        # ...and now includes an item that only matches the smaller word.
+        self.assertIn("Treasury Deposits", proxy_names)
+        self.assertNotIn("Treasury Deposits", intersection_names)
+
+    def test_intersection_decision_keys_off_smallest_set(self):
+        """
+        The intersection skip is driven by the *smallest* per-word set, not the largest. Setting
+        the threshold equal to the smallest set's cardinality (which is far below the large
+        "rate" set) must NOT trigger the skip: equality is not over the strict threshold, and
+        the large "rate" set is irrelevant to the decision.
+        """
+        cardinalities = self._prefix_cardinalities(["treasury rate"])
+        smallest_card = min(cardinalities.values())
+        largest_card = max(cardinalities.values())
+        # Sanity check the fixture really does give us a small set alongside a much larger one.
+        self.assertLess(smallest_card, largest_card)
+
+        # threshold == smallest set -> not strictly exceeded -> intersection still computed,
+        # even though the "rate" set is much larger than the threshold.
+        setattr(auto_settings, "CARDINALITY_THRESHOLD_INTERSECTION", smallest_card)
+        names = self._display_names(self.autocomp.suggest("treasury rate"))
+        self.assertNotIn("Treasury Deposits", names)
+
+        # threshold one below the smallest set -> strictly exceeded -> intersection skipped.
+        setattr(auto_settings, "CARDINALITY_THRESHOLD_INTERSECTION", smallest_card - 1)
+        names = self._display_names(self.autocomp.suggest("treasury rate"))
+        self.assertIn("Treasury Deposits", names)
+
+    def test_union_threshold_zero_skips_union(self):
+        """
+        Join-char queries ("U-S/A") expand to several normalized terms and exercise the union
+        path. A union threshold of 0 (with the intersection threshold left high) skips the
+        zunionstore in favor of the single smallest term-result-key, yielding a non-empty subset
+        of the full union.
+        """
+        baseline_names = self._display_names(self.autocomp.suggest("U-S/A"))
+        # The full union spans many "US ..." items, so it is meaningfully larger than one set.
+        self.assertGreater(len(baseline_names), 1)
+
+        setattr(auto_settings, "CARDINALITY_THRESHOLD_UNION", 0)
+        proxy_names = self._display_names(self.autocomp.suggest("U-S/A"))
+
+        self.assertGreater(len(proxy_names), 0)
+        self.assertTrue(proxy_names.issubset(baseline_names))
+        self.assertLess(len(proxy_names), len(baseline_names))
+
+    def test_thresholds_are_independent(self):
+        """
+        The two thresholds govern different operations. A single-word-per-term query like
+        "treasury rate" only ever intersects (it never unions), so collapsing the union
+        threshold to 0 must not change its results.
+        """
+        baseline_names = self._display_names(self.autocomp.suggest("treasury rate"))
+
+        setattr(auto_settings, "CARDINALITY_THRESHOLD_UNION", 0)
+        names = self._display_names(self.autocomp.suggest("treasury rate"))
+        self.assertEqual(names, baseline_names)
+        self.assertNotIn("Treasury Deposits", names)
