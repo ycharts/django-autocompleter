@@ -494,13 +494,22 @@ class AutocompleterProviderBase(AutocompleterBase):
         """
         # Init data
         obj_id = self.get_item_id()
-        terms = self.__class__.get_old_norm_terms(obj_id)
-        if terms is not None:
-            self.__class__.clear_keys(obj_id, terms)
-        facets = self.__class__.get_old_facets(obj_id)
-        if facets is not None:
-            self.__class__.clear_facets(obj_id, facets)
-        self.__class__.clear_score(obj_id)
+        self.__class__.remove_by_id(obj_id)
+
+    @classmethod
+    def remove_by_id(cls, obj_id):
+        """
+        Remove an object from the autocompleter by its ID.
+        DO NOT override this.
+        """
+        # Get old terms and facets to clear out of Redis
+        old_norm_terms = cls.get_old_norm_terms(obj_id)
+        if old_norm_terms is not None:
+            cls.clear_keys(obj_id, old_norm_terms)
+        old_facets = cls.get_old_facets(obj_id)
+        if old_facets is not None:
+            cls.clear_facets(obj_id, old_facets)
+        cls.clear_score(obj_id)
 
     @classmethod
     def store_all(cls):
