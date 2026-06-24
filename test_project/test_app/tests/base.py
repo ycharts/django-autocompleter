@@ -18,8 +18,7 @@ class AutocompleterTestCase(TestCase):
         # Purge any possible old test data
         old_data = self.redis.keys("djac.test.*")
         pipe = self.redis.pipeline()
-        for i in self.chunk_list(old_data, 100):
-            pipe.delete(*i)
+        pipe.delete(old_data)
         pipe.execute()
 
     @classmethod
