@@ -55,6 +55,8 @@ RESULT_SET_BASE_NAME = "djac.results.%s"
 
 SCORE_MAP_BASE_NAME = AUTO_BASE_NAME + ".sm"
 
+INTERMEDIATE_KEY_TTL_S = 10
+
 
 class AutocompleterBase(object):
     def __init__(self, logger=None) -> None:
@@ -1109,6 +1111,7 @@ class Autocompleter(AutocompleterBase):
                         # so we set it as such to help future union optimizations
                         keys_to_cardinality[term_result_key] = smallest_key_cardinality
                         pipe.zinterstore(term_result_key, keys, aggregate="MIN")
+                        pipe.expire(term_result_key, INTERMEDIATE_KEY_TTL_S)
 
             if len(term_result_keys) == 1:
                 final_result_key = term_result_keys[0]
@@ -1120,6 +1123,7 @@ class Autocompleter(AutocompleterBase):
                 else:
                     final_result_key = base_result_key
                     pipe.zunionstore(final_result_key, term_result_keys, aggregate="MIN")
+                    pipe.expire(final_result_key, INTERMEDIATE_KEY_TTL_S)
 
             provider_keys_set = set(provider.get_facets())
 
@@ -1179,10 +1183,12 @@ class Autocompleter(AutocompleterBase):
                             pipe.zinterstore(
                                 facet_result_key, facet_set_keys, aggregate="MIN"
                             )
+                            pipe.expire(facet_result_key, INTERMEDIATE_KEY_TTL_S)
                         else:
                             pipe.zunionstore(
                                 facet_result_key, facet_set_keys, aggregate="MIN"
                             )
+                            pipe.expire(facet_result_key, INTERMEDIATE_KEY_TTL_S)
                 except KeyError:
                     continue
 
@@ -1197,6 +1203,7 @@ class Autocompleter(AutocompleterBase):
                     facet_result_keys + [final_result_key],
                     aggregate="MIN",
                 )
+                pipe.expire(facet_final_result_key, INTERMEDIATE_KEY_TTL_S)
                 pipe.zrange(facet_final_result_key, 0, MAX_RESULTS - 1)
             else:
                 pipe.zrange(final_result_key, 0, MAX_RESULTS - 1)
@@ -1221,6 +1228,7 @@ class Autocompleter(AutocompleterBase):
                 else:
                     final_exact_match_key = base_exact_match_key
                     pipe.zunionstore(final_exact_match_key, keys, aggregate="MIN")
+                    pipe.expire(final_exact_match_key, INTERMEDIATE_KEY_TTL_S)
 
                 # If facets are being used for this suggest call, we need to make sure that
                 # exact term matches don't bypass the requirement of having matching facet values.
@@ -1232,6 +1240,7 @@ class Autocompleter(AutocompleterBase):
                         facet_result_keys + [final_exact_match_key],
                         aggregate="MIN",
                     )
+                    pipe.expire(facet_final_exact_match_key, INTERMEDIATE_KEY_TTL_S)
                     pipe.zrange(facet_final_exact_match_key, 0, MAX_RESULTS - 1)
                 else:
                     pipe.zrange(final_exact_match_key, 0, MAX_RESULTS - 1)
@@ -1419,6 +1428,7 @@ class Autocompleter(AutocompleterBase):
                 pipe.zrange(keys[0], 0, MAX_RESULTS - 1)
             else:
                 pipe.zunionstore(intermediate_result_key, keys, aggregate="MIN")
+                pipe.expire(intermediate_result_key, INTERMEDIATE_KEY_TTL_S)
                 pipe.zrange(intermediate_result_key, 0, MAX_RESULTS - 1)
                 pipe.unlink(intermediate_result_key)
         results = [i for i in pipe.execute() if type(i) == list]
