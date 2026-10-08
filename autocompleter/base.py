@@ -531,6 +531,11 @@ class AutocompleterProviderBase(AutocompleterBase):
         This will clear the provider even when the underlying objects don't exist.
         DO NOT override this.
         """
+        raise RuntimeError(
+            '`remove_all` was de-activated in version 1.4.2 due to its use of the costly "KEYS" command. '
+            'Use `remove_obj_from_autocompleter` in its place.'
+        )
+
         provider_name = cls.provider_name
 
         # Get list of all prefixes for provider
