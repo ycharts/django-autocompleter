@@ -16,13 +16,6 @@ class Command(BaseCommand):
             type=str,
         )
         parser.add_argument(
-            "--remove",
-            action="store_true",
-            default=False,
-            dest="remove",
-            help="Remove all data for the given autocompleter providers.",
-        )
-        parser.add_argument(
             "--store",
             action="store_true",
             default=False,
@@ -51,11 +44,6 @@ class Command(BaseCommand):
         provider_classes = [provider_name_to_provider[n] for n in input_provider_names]
 
         log_target = "autocompleter providers: %s" % ", ".join(input_provider_names)
- 
-        if options["remove"]:
-            self.log.info("Removing all objects for %s" % log_target)
-            for pc in provider_classes:
-                pc.remove_all()
 
         if options["store"]:
             self.log.info("Storing all objects for %s" % log_target)

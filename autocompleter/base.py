@@ -531,11 +531,6 @@ class AutocompleterProviderBase(AutocompleterBase):
         This will clear the provider even when the underlying objects don't exist.
         DO NOT override this.
         """
-        raise RuntimeError(
-            '`remove_all` was de-activated in version 1.4.2 due to its use of the costly "KEYS" command. '
-            'Use `remove_obj_from_autocompleter` in its place.'
-        )
-
         provider_name = cls.provider_name
 
         # Get list of all prefixes for provider
@@ -557,7 +552,7 @@ class AutocompleterProviderBase(AutocompleterBase):
 
         # Get list of facets
         facet_base = FACET_BASE_NAME % (provider_name,)
-        keys = [facet.decode() for facet in REDIS.keys(facet_base + ".*")]
+        keys = [facet.decode() for facet in REDIS.scan_iter(facet_base + ".*", count=1000)]
         facet_keys = cls.chunk_list(keys, 100)
 
         # Start pipeline
@@ -606,7 +601,7 @@ class AutocompleterProviderBase(AutocompleterBase):
         if not settings.TEST_DATA:
             key = AUTO_BASE_NAME % (provider_name,)
             key += "*"
-            leftovers = REDIS.keys(key)
+            leftovers = REDIS.scan_iter(key, count=1000)
 
             pipe = REDIS.pipeline()
             for i in leftovers:
