@@ -51,8 +51,6 @@ FACET_BASE_NAME = AUTO_BASE_NAME + ".f"
 FACET_SET_BASE_NAME = FACET_BASE_NAME + ".%s.%s"
 FACET_MAP_BASE_NAME = AUTO_BASE_NAME + ".fm"
 
-RESULT_SET_BASE_NAME = "djac.results.%s"
-
 SCORE_MAP_BASE_NAME = AUTO_BASE_NAME + ".sm"
 
 INTERMEDIATE_KEY_TTL_S = 10
@@ -415,8 +413,6 @@ class AutocompleterProviderBase(AutocompleterBase):
 
         # Clear out the obj_id's old data if told to
         if delete_old is True:
-            # TODO: memoize get_old_terms? Otherwise have to pass old_terms down the line to avoid
-            # doing 2 extra redis queries.
             if norm_terms_updated and old_norm_terms is not None:
                 self.__class__.clear_keys(obj_id, old_norm_terms)
             if facets_updated and old_facets is not None:
@@ -552,7 +548,7 @@ class AutocompleterProviderBase(AutocompleterBase):
 
         # Get list of facets
         facet_base = FACET_BASE_NAME % (provider_name,)
-        keys = [facet.decode() for facet in REDIS.keys(facet_base + ".*")]
+        keys = [facet.decode() for facet in REDIS.scan_iter(facet_base + ".*", count=10_000)]
         facet_keys = cls.chunk_list(keys, 100)
 
         # Start pipeline
@@ -601,7 +597,7 @@ class AutocompleterProviderBase(AutocompleterBase):
         if not settings.TEST_DATA:
             key = AUTO_BASE_NAME % (provider_name,)
             key += "*"
-            leftovers = REDIS.keys(key)
+            leftovers = REDIS.scan_iter(key, count=10_000)
 
             pipe = REDIS.pipeline()
             for i in leftovers:
@@ -1003,7 +999,7 @@ class Autocompleter(AutocompleterBase):
         """
         REDIS.incr(CACHE_VERSION_BASE_NAME % (self.name,))
 
-    def suggest(self, term, facets=[], *, strict=True):
+    def suggest(self, term, facets=None, *, strict=True):
         """
         Suggest matching objects, given a term.
 
@@ -1020,6 +1016,9 @@ class Autocompleter(AutocompleterBase):
         │ OR(fake_key=X, other_fake=Y)         │ empty results                   │ group skipped (unfiltered)  │
         └──────────────────────────────────────┴─────────────────────────────────┴─────────────────────────────┘
         """
+        if facets is None:
+            facets = []
+
         providers = self._get_all_providers_by_autocompleter()
         if providers is None:
             return []
